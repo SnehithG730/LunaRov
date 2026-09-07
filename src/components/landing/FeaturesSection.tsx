@@ -59,17 +59,20 @@ export const FeaturesSection: React.FC = () => {
   ];
 
   return (
-    <section id="features" className="py-20 px-4 sm:px-8 bg-[#050811] relative z-20 border-t border-cyan-950/70">
+    <section id="features" className="py-20 px-4 sm:px-8 bg-[#040713] relative z-20 border-t border-cyan-950/70">
       <div className="max-w-7xl mx-auto space-y-12">
-        {/* Section Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-cyan-950 pb-6">
-          <div>
+        {/* Section Header - Dual Tone White & Galaxy Theme */}
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-cyan-950 pb-6 text-left">
+          <div className="space-y-1.5">
             <div className="text-[11px] font-mono text-cyan-400 uppercase tracking-widest flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
               SYSTEM CAPABILITIES
             </div>
-            <h2 className="text-2xl sm:text-4xl font-bold font-mono text-white tracking-wide mt-1 uppercase">
-              AEROSPACE SIMULATION MODULES
+            <h2 className="text-2xl sm:text-4xl font-black font-mono tracking-wide uppercase">
+              <span className="text-white">AEROSPACE </span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-purple-300 to-fuchsia-400">
+                SIMULATION MODULES
+              </span>
             </h2>
           </div>
           <p className="text-xs sm:text-sm font-mono text-gray-400 max-w-md">
@@ -84,7 +87,7 @@ export const FeaturesSection: React.FC = () => {
             return (
               <div
                 key={feat.id}
-                className="group bg-[#090e1c]/80 backdrop-blur-md border border-cyan-950/80 hover:border-cyan-500/50 rounded-xl p-6 transition-all duration-200 hover:shadow-xl hover:shadow-cyan-950/40 flex flex-col justify-between font-mono space-y-5"
+                className="group bg-[#080d1e]/85 backdrop-blur-md border border-cyan-950/90 hover:border-cyan-500/50 rounded-xl p-6 transition-all duration-200 hover:shadow-xl hover:shadow-cyan-950/40 flex flex-col justify-between font-mono space-y-5 text-left"
               >
                 <div className="space-y-4">
                   {/* Icon & Title */}

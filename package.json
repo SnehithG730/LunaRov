@@ -1,17 +1,24 @@
 {
-  "name": "lunar-rover-simulator",
+  "name": "lunarov",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx --yes tsx src/core/__tests__/engine.test.ts"
   },
   "dependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/three": "^0.185.4",
+    "canvas-confetti": "^1.9.4",
+    "lucide-react": "^1.41.0",
     "next": "16.3.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "^0.185.1",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

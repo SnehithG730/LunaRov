@@ -1,26 +1,138 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #040711;
+  --foreground: #f1f5f9;
+  --panel-bg: rgba(8, 13, 26, 0.78);
+  --panel-border: rgba(6, 182, 212, 0.2);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-x: hidden;
+  background-attachment: fixed;
+}
+
+/* Accessible High-Contrast Focus Visible Ring */
+*:focus-visible {
+  outline: 2px solid #22d3ee !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.4) !important;
+}
+
+/* Custom aerospace precision scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(3, 7, 18, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(6, 182, 212, 0.3);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(6, 182, 212, 0.6);
+}
+
+/* Aerospace Glass Panel System */
+.aerospace-panel {
+  background: rgba(8, 13, 26, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(6, 182, 212, 0.18);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+}
+
+.aerospace-panel-solid {
+  background: #080d1a;
+  border: 1px solid rgba(6, 182, 212, 0.22);
+}
+
+/* Corner Reticle Accents for Mission Control Interface */
+.corner-reticle {
+  position: relative;
+}
+
+.corner-reticle::before,
+.corner-reticle::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  pointer-events: none;
+  border-color: rgba(6, 182, 212, 0.6);
+  border-style: solid;
+}
+
+.corner-reticle::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1.5px 0 0 1.5px;
+}
+
+.corner-reticle::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 1.5px 1.5px 0;
+}
+
+/* Tactile Button Micro-interactions */
+.btn-aerospace-primary {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-aerospace-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 18px rgba(6, 182, 212, 0.35);
+}
+
+.btn-aerospace-primary:active {
+  transform: translateY(1px);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.6)); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.18s ease-out forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.2s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+/* Accessibility: Respect Prefers Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

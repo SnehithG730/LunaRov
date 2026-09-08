@@ -109,7 +109,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   missionEvents: [
     {
       id: 'evt-init',
-      timestamp: Date.now(),
+      timestamp: 0,
       simTimeSeconds: 0,
       type: 'INFO',
       message: 'Mission initialized',

@@ -192,7 +192,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           <Clock className="w-3.5 h-3.5 text-cyan-400" />
           <div>
             <div className="text-[8px] text-gray-500 uppercase tracking-wider font-bold">MISSION CLOCK</div>
-            <div className="text-cyan-300 font-bold tracking-widest text-xs tabular-nums">{timeStr}</div>
+            <div className="text-cyan-300 font-bold tracking-widest text-xs tabular-nums" suppressHydrationWarning>
+              {timeStr}
+            </div>
           </div>
         </div>
 

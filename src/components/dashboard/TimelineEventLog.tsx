@@ -12,13 +12,17 @@ import {
   Filter,
 } from 'lucide-react';
 
+const emptySubscribe = () => () => {};
+
 export const TimelineEventLog: React.FC = () => {
   const missionEvents = useMissionStore((s) => s.missionEvents);
   const [filter, setFilter] = useState<'ALL' | 'ALERTS' | 'SUCCESS' | 'INFO'>('ALL');
+  const isMounted = React.useSyncExternalStore(emptySubscribe, () => true, () => false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Format timestamp into HH:MM:SS
   const formatClockTime = (timestamp: number) => {
+    if (!timestamp) return '00:00:00';
     const d = new Date(timestamp);
     const hrs = String(d.getHours()).padStart(2, '0');
     const mins = String(d.getMinutes()).padStart(2, '0');
@@ -140,9 +144,13 @@ export const TimelineEventLog: React.FC = () => {
               {/* Timestamp format: 08:42:15 and T+0.0s */}
               <div className="flex items-center gap-1.5 text-gray-400 font-bold shrink-0 text-[10.5px] tabular-nums">
                 <Clock className="w-3 h-3 text-gray-500" />
-                <span className="text-cyan-300">{formatClockTime(evt.timestamp)}</span>
+                <span className="text-cyan-300" suppressHydrationWarning>
+                  {isMounted ? formatClockTime(evt.timestamp) : '--:--:--'}
+                </span>
                 <span className="text-gray-600">|</span>
-                <span className="text-gray-400 text-[10px]">T+{evt.simTimeSeconds.toFixed(1)}s</span>
+                <span className="text-gray-400 text-[10px]" suppressHydrationWarning>
+                  T+{evt.simTimeSeconds.toFixed(1)}s
+                </span>
               </div>
 
               {/* Badge */}

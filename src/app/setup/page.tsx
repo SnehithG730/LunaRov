@@ -106,7 +106,7 @@ export default function MissionSetupPage() {
         <div className="flex items-center gap-2.5">
           <div className="hidden sm:flex items-center gap-2 font-mono text-xs text-gray-300 bg-black/60 px-2.5 py-1 rounded-lg border border-cyan-900/60 shadow-inner">
             <span className="text-[10px] text-gray-500 font-bold">UTC:</span>
-            <span className="text-cyan-300 font-bold">{timeUtc || '00:00:00 UTC'}</span>
+            <span className="text-cyan-300 font-bold" suppressHydrationWarning>{timeUtc || '00:00:00 UTC'}</span>
           </div>
 
           <button

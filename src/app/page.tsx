@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LandingNav } from '@/components/landing/LandingNav';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { FeaturesSection } from '@/components/landing/FeaturesSection';
@@ -22,11 +22,24 @@ export default function LandingPage() {
   const [selectedPlanet, setSelectedPlanet] = useState<PlanetData | null>(null);
   const [isPlanetModalOpen, setIsPlanetModalOpen] = useState(false);
 
+  // Pinned Planetary Scroll Tracking
+  const planetTrackRef = useRef<HTMLDivElement | null>(null);
+  const [activePlanetIndex, setActivePlanetIndex] = useState<number>(0);
+
   const { user, hasCheckedStorage, initializeAuth, login } = useAuthStore();
 
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
+
+  // Jump to specific planet waypoint along the pinned track
+  const handleScrollToPlanet = useCallback((index: number) => {
+    if (!planetTrackRef.current) return;
+    const totalTrackScroll = planetTrackRef.current.offsetHeight - window.innerHeight;
+    if (totalTrackScroll <= 0) return;
+    const targetY = (index / (SOLAR_SYSTEM_PLANETS.length - 1)) * totalTrackScroll;
+    window.scrollTo({ top: targetY, behavior: 'smooth' });
+  }, []);
 
   // Show interactive Space Entrance on initial visit if not logged in
   const shouldShowEntrance =
@@ -51,12 +64,6 @@ export default function LandingPage() {
 
   return (
     <main className="min-h-screen flex flex-col bg-[#030612] text-slate-100 selection:bg-cyan-500 selection:text-black relative">
-      {/* 3D WebGL Solar System Background with Scroll Camera Interpolation */}
-      <SolarSystemBackground
-        onPlanetDoubleClick={handlePlanetDoubleClick}
-        activePlanetId={selectedPlanet?.id}
-      />
-
       {/* 8-Step Interactive Space Login & Launch Gate */}
       {shouldShowEntrance && (
         <SpaceEntranceAuth
@@ -74,22 +81,50 @@ export default function LandingPage() {
         onOpenLogin={() => setForceShowLogin(true)}
       />
 
-      {/* Hero Section with Left Typography and Planet Quick Actions */}
-      <HeroSection
-        onOpenPlanetInspector={(planet) => {
-          setSelectedPlanet(planet || SOLAR_SYSTEM_PLANETS[2]);
-          setIsPlanetModalOpen(true);
-        }}
-      />
+      {/* Pinned Solar System Planetary Exploration Track */}
+      {/* The planets are scrolled completely first before the page continues downward */}
+      <div
+        ref={planetTrackRef}
+        className="relative w-full h-[550vh]"
+        id="solar-voyage"
+      >
+        <div className="sticky top-0 h-screen w-full overflow-hidden flex flex-col justify-between">
+          {/* 3D WebGL Solar System Background with Continuous Catmull-Rom Camera Splines */}
+          <SolarSystemBackground
+            onPlanetDoubleClick={handlePlanetDoubleClick}
+            activePlanetId={selectedPlanet?.id}
+            onActivePlanetChange={(_, idx) => {
+              setActivePlanetIndex(idx);
+            }}
+            onScrollToPlanet={handleScrollToPlanet}
+          />
 
-      {/* Feature Modules Breakdown with Translucent Galaxy Card Layering */}
-      <FeaturesSection />
+          {/* Hero Section with Dynamic Celestial Telemetry & Actions */}
+          <HeroSection
+            activePlanetIndex={activePlanetIndex}
+            onOpenPlanetInspector={(planet) => {
+              setSelectedPlanet(
+                planet || SOLAR_SYSTEM_PLANETS[activePlanetIndex] || SOLAR_SYSTEM_PLANETS[2]
+              );
+              setIsPlanetModalOpen(true);
+            }}
+            onScrollToPlanet={handleScrollToPlanet}
+          />
+        </div>
+      </div>
 
-      {/* How It Works Operational Lifecycle */}
-      <HowItWorksSection />
+      {/* Page Content: Features, How It Works & Footer */}
+      {/* Scrolls into view ONLY after the planets have been fully traversed */}
+      <div className="relative z-20 bg-[#030612] border-t border-cyan-950/80 shadow-[0_-30px_60px_rgba(3,6,18,0.95)]">
+        {/* Feature Modules Breakdown */}
+        <FeaturesSection />
 
-      {/* Aerospace Footer */}
-      <LandingFooter onOpenAbout={() => setIsAboutModalOpen(true)} />
+        {/* How It Works Operational Lifecycle */}
+        <HowItWorksSection />
+
+        {/* Aerospace Footer */}
+        <LandingFooter onOpenAbout={() => setIsAboutModalOpen(true)} />
+      </div>
 
       {/* Interactive System Docs & Architecture Modal */}
       <EducationalModal
@@ -107,4 +142,5 @@ export default function LandingPage() {
     </main>
   );
 }
+
 

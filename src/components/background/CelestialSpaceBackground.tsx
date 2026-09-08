@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { Orbit, Sparkles, Navigation, Globe } from 'lucide-react';
+import { Orbit, Compass, Navigation, Globe } from 'lucide-react';
 
 export interface CelestialBodyInfo {
   id: string;
@@ -1159,7 +1159,7 @@ export const CelestialSpaceBackground: React.FC<CelestialSpaceBackgroundProps> =
       {/* Warp Jump Notice Overlay */}
       {jumpNotice && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none flex items-center gap-3 px-6 py-3 rounded-2xl bg-black/80 border border-cyan-400 text-cyan-300 font-mono text-sm font-bold shadow-[0_0_40px_rgba(0,240,255,0.5)] backdrop-blur-xl animate-pulse">
-          <Sparkles className="w-5 h-5 text-cyan-400 animate-spin" />
+          <Compass className="w-5 h-5 text-cyan-400 animate-spin" />
           <span>{jumpNotice}</span>
         </div>
       )}

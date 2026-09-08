@@ -15,7 +15,6 @@ import {
   Compass,
   Mountain,
   RotateCcw,
-  Sparkles,
   Cpu,
 } from 'lucide-react';
 
@@ -227,7 +226,7 @@ export const MissionConfigPanel: React.FC = () => {
             <div className="space-y-1">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-slate-400 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-purple-400" /> Movement Efficiency:
+                  <Zap className="w-3 h-3 text-purple-400" /> Movement Efficiency:
                 </span>
                 <span className="text-purple-300 font-bold">{roverConfig.movementEfficiency.toFixed(2)}x</span>
               </div>

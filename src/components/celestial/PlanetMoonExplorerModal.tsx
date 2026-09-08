@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   X,
   Compass,
-  Sparkles,
+  Orbit,
   Play,
   Globe,
   Layers,
@@ -354,7 +354,7 @@ export const PlanetMoonExplorerModal: React.FC<PlanetMoonExplorerModalProps> = (
                   className="w-full h-full cursor-grab active:cursor-grabbing rounded-full shadow-[0_0_50px_rgba(6,182,212,0.25)]"
                 />
                 <div className="absolute bottom-1 right-1 flex items-center space-x-1 text-[9px] font-mono text-slate-400 bg-black/60 px-2 py-1 rounded-full border border-slate-700 pointer-events-none">
-                  <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+                  <Orbit className="w-2.5 h-2.5 text-cyan-400" />
                   <span>360° Drag & Spin</span>
                 </div>
               </div>

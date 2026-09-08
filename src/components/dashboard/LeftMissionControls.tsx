@@ -12,7 +12,7 @@ import {
   Route,
   Cpu,
   Layers,
-  Sparkles,
+  Activity,
   MapPin,
   Compass,
   Zap,
@@ -251,7 +251,7 @@ export const LeftMissionControls: React.FC = () => {
             title="Randomize sector seed [G]"
             aria-label="Randomize Terrain"
           >
-            <Sparkles className="w-3 h-3" />
+            <Activity className="w-3 h-3" />
             <span>RANDOMIZE</span>
           </button>
         </div>

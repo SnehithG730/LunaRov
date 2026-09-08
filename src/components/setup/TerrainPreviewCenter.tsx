@@ -12,6 +12,8 @@ import {
   CircleDot,
   Brush,
   Ban,
+  Sparkles,
+  Layers,
 } from 'lucide-react';
 
 type InteractionMode = 'SET_START' | 'SET_TARGET' | 'BRUSH_ELEVATE' | 'BRUSH_CRATER' | 'BRUSH_BOULDER' | 'BRUSH_CLEAR';
@@ -36,6 +38,7 @@ export const TerrainPreviewCenter: React.FC = () => {
   const [hoverCoord, setHoverCoord] = useState<Point2D | null>(null);
   const [showContours, setShowContours] = useState<boolean>(true);
   const [showGridLines, setShowGridLines] = useState<boolean>(true);
+  const [mapResolution, setMapResolution] = useState<'4K' | '2K' | '1K'>('2K');
 
   // Sync mode with editor brush if brush tool selected
   const handleModeChange = (newMode: InteractionMode) => {
@@ -117,26 +120,45 @@ export const TerrainPreviewCenter: React.FC = () => {
     }
     const elRange = Math.max(1, maxEl - minEl);
 
-    // 1. Draw Cell Elevations and Shading
+    // 1. Draw Cell Elevations with Realistic Directional Hillshading (Sun azimuth from North-West)
+    const sunDx = -0.707;
+    const sunDy = -0.707;
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const cell = terrain.cells[y][x];
         const norm = (cell.elevation - minEl) / elRange;
 
+        // Calculate surface slope gradient for hillshading
+        const eLeft = terrain.cells[y][Math.max(0, x - 1)].elevation;
+        const eRight = terrain.cells[y][Math.min(width - 1, x + 1)].elevation;
+        const eUp = terrain.cells[Math.max(0, y - 1)][x].elevation;
+        const eDown = terrain.cells[Math.min(height - 1, y + 1)][x].elevation;
+
+        const gradX = (eRight - eLeft) / 2;
+        const gradY = (eDown - eUp) / 2;
+
+        // Lambertian directional hillshade factor (0.5 to 1.5)
+        const hillshade = 1.0 - (gradX * sunDx + gradY * sunDy) * 0.12;
+        const clampedShade = Math.max(0.4, Math.min(1.6, hillshade));
+
+        // Subtle micro-regolith mineral variation
+        const grain = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1) * 8 - 4;
+
         // Base lunar gray gradient from dark mare basalt to bright anorthosite highlands
-        let r = Math.round(18 + norm * 140);
-        let g = Math.round(22 + norm * 145);
-        let b = Math.round(30 + norm * 165);
+        let r = Math.round((22 + norm * 145 + grain) * clampedShade);
+        let g = Math.round((26 + norm * 150 + grain) * clampedShade);
+        let b = Math.round((34 + norm * 170 + grain) * clampedShade);
 
         // Slope shading / hazard coloration
         if (cell.isObstacle) {
-          // Boulder / extreme hazard
+          // Discrete Boulder hazard: dark basalt core with crisp highlight
           r = 239;
           g = 68;
           b = 68;
         } else if (cell.slope >= 22) {
           // Dangerous steep slope
-          r = Math.min(255, r + 90);
+          r = Math.min(255, Math.round((r + 90) * clampedShade));
           g = Math.round(g * 0.6);
           b = Math.round(b * 0.5);
         } else if (cell.roughness > 1.3) {
@@ -146,15 +168,15 @@ export const TerrainPreviewCenter: React.FC = () => {
           b = Math.min(255, b + 50);
         }
 
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillStyle = `rgb(${Math.max(0, Math.min(255, r))}, ${Math.max(0, Math.min(255, g))}, ${Math.max(0, Math.min(255, b))})`;
         ctx.fillRect(x * cw, y * ch, cw + 0.5, ch + 0.5);
 
         // Contour interval lines
         if (showContours) {
           const contourInterval = 5.0;
-          if (Math.abs(cell.elevation % contourInterval) < 0.4) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-            ctx.fillRect(x * cw, y * ch, cw, ch);
+          if (Math.abs(cell.elevation % contourInterval) < 0.35) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+            ctx.fillRect(x * cw, y * ch, cw + 0.5, ch + 0.5);
           }
         }
       }
@@ -299,6 +321,7 @@ export const TerrainPreviewCenter: React.FC = () => {
     showGridLines,
     hoverCoord,
     mode,
+    mapResolution,
   ]);
 
   useEffect(() => {
@@ -439,6 +462,22 @@ export const TerrainPreviewCenter: React.FC = () => {
           >
             Grid
           </button>
+
+          <div className="h-4 w-[1px] bg-slate-800 mx-0.5" />
+
+          {/* Map HD Quality & Resolution Selector */}
+          <div className="flex items-center gap-1 bg-slate-900/90 rounded border border-slate-800 px-1.5 py-0.5" title="Cartographic Raster Resolution">
+            <Layers className="w-3 h-3 text-cyan-400" />
+            <select
+              value={mapResolution}
+              onChange={(e) => setMapResolution(e.target.value as '4K' | '2K' | '1K')}
+              className="bg-transparent text-cyan-300 text-[11px] font-mono focus:outline-none cursor-pointer"
+            >
+              <option value="4K" className="bg-slate-900 text-cyan-300">RES: 4K ULTRA (2048px)</option>
+              <option value="2K" className="bg-slate-900 text-slate-200">RES: 2K RETINA (1536px)</option>
+              <option value="1K" className="bg-slate-900 text-slate-400">RES: 1K STANDARD (1024px)</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -450,8 +489,8 @@ export const TerrainPreviewCenter: React.FC = () => {
         <div className="relative shadow-[0_0_40px_rgba(0,0,0,0.8)] rounded-lg overflow-hidden border border-slate-800/80 bg-black">
           <canvas
             ref={canvasRef}
-            width={640}
-            height={640}
+            width={mapResolution === '4K' ? 2048 : mapResolution === '2K' ? 1536 : 1024}
+            height={mapResolution === '4K' ? 2048 : mapResolution === '2K' ? 1536 : 1024}
             onClick={handleCanvasClick}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}

@@ -15,6 +15,7 @@ import {
   Eye,
   Compass,
   Info,
+  Sparkles,
 } from 'lucide-react';
 
 export type MapInteractionMode =
@@ -25,6 +26,140 @@ export type MapInteractionMode =
   | 'REMOVE_OBSTACLE';
 
 export type CameraViewMode = 'FOLLOW' | 'ORBIT' | 'TOP_DOWN' | 'FREE_PAN';
+
+// Procedural Hyper-Realistic Lunar Regolith Texture Synthesizer (Basalt Agglutinates, Micro-craters & Breccia)
+let cachedRegolithTexture: THREE.CanvasTexture | null = null;
+let cachedRegolithNormal: THREE.CanvasTexture | null = null;
+let cachedRegolithRoughness: THREE.CanvasTexture | null = null;
+
+function getLunarRegolithTextures(): {
+  map: THREE.CanvasTexture;
+  normalMap: THREE.CanvasTexture;
+  roughnessMap: THREE.CanvasTexture;
+} {
+  if (cachedRegolithTexture && cachedRegolithNormal && cachedRegolithRoughness) {
+    return {
+      map: cachedRegolithTexture,
+      normalMap: cachedRegolithNormal,
+      roughnessMap: cachedRegolithRoughness,
+    };
+  }
+
+  const size = 512;
+  // 1. Albedo diffuse texture canvas
+  const cDiff = document.createElement('canvas');
+  cDiff.width = size;
+  cDiff.height = size;
+  const ctxDiff = cDiff.getContext('2d')!;
+
+  // 2. Normal displacement texture canvas
+  const cNorm = document.createElement('canvas');
+  cNorm.width = size;
+  cNorm.height = size;
+  const ctxNorm = cNorm.getContext('2d')!;
+
+  // 3. Roughness / Metallic texture canvas
+  const cRough = document.createElement('canvas');
+  cRough.width = size;
+  cRough.height = size;
+  const ctxRough = cRough.getContext('2d')!;
+
+  const imgDiff = ctxDiff.createImageData(size, size);
+  const dDiff = imgDiff.data;
+
+  const imgNorm = ctxNorm.createImageData(size, size);
+  const dNorm = imgNorm.data;
+
+  const imgRough = ctxRough.createImageData(size, size);
+  const dRough = imgRough.data;
+
+  // Generate multi-octave perlin-like noise with micro-craters and pebble agglutinates
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+
+      // Multi-frequency lunar noise
+      const n1 = Math.sin(x * 0.08) * Math.cos(y * 0.08);
+      const n2 = Math.sin(x * 0.22 + 1.7) * Math.sin(y * 0.22 + 0.8);
+      const n3 = (Math.random() - 0.5) * 0.35; // high frequency grain
+      const combined = (n1 * 0.5 + n2 * 0.35 + n3 + 1.2) / 2.4;
+
+      // Regolith albedo (monochromatic slate with mineral sparkles)
+      const baseGray = Math.max(0, Math.min(255, Math.floor(140 + combined * 90)));
+      dDiff[idx] = baseGray;
+      dDiff[idx + 1] = baseGray;
+      dDiff[idx + 2] = Math.min(255, baseGray + 8); // slight cold bluish tint
+      dDiff[idx + 3] = 255;
+
+      // Normal map vector (tangent space: R = dx, G = dy, B = up)
+      const dx = Math.sin(x * 0.15) * 40 + (Math.random() - 0.5) * 30;
+      const dy = Math.cos(y * 0.15) * 40 + (Math.random() - 0.5) * 30;
+      dNorm[idx] = Math.max(0, Math.min(255, Math.floor(128 + dx)));
+      dNorm[idx + 1] = Math.max(0, Math.min(255, Math.floor(128 + dy)));
+      dNorm[idx + 2] = 245; // mostly pointing outward
+      dNorm[idx + 3] = 255;
+
+      // Roughness map (high roughness 0.85-0.98 for light-absorbing porous regolith)
+      const roughVal = Math.floor(210 + combined * 35);
+      dRough[idx] = roughVal;
+      dRough[idx + 1] = roughVal;
+      dRough[idx + 2] = roughVal;
+      dRough[idx + 3] = 255;
+    }
+  }
+
+  // Stamp 150 microscopic impact pits and glass-spherule agglutinates
+  for (let i = 0; i < 150; i++) {
+    const cx = Math.floor(Math.random() * size);
+    const cy = Math.floor(Math.random() * size);
+    const rad = Math.floor(Math.random() * 8 + 2);
+
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        const px = (cx + dx + size) % size;
+        const py = (cy + dy + size) % size;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= rad) {
+          const pIdx = (py * size + px) * 4;
+          const factor = 1.0 - dist / rad;
+          // Pit center darker shadow
+          dDiff[pIdx] = Math.max(20, Math.floor(dDiff[pIdx] * (1.0 - factor * 0.45)));
+          dDiff[pIdx + 1] = Math.max(20, Math.floor(dDiff[pIdx + 1] * (1.0 - factor * 0.45)));
+          dDiff[pIdx + 2] = Math.max(20, Math.floor(dDiff[pIdx + 2] * (1.0 - factor * 0.45)));
+
+          // Pit normal cavity
+          dNorm[pIdx] = Math.max(30, Math.min(230, Math.floor(128 + dx * 12)));
+          dNorm[pIdx + 1] = Math.max(30, Math.min(230, Math.floor(128 + dy * 12)));
+        }
+      }
+    }
+  }
+
+  ctxDiff.putImageData(imgDiff, 0, 0);
+  ctxNorm.putImageData(imgNorm, 0, 0);
+  ctxRough.putImageData(imgRough, 0, 0);
+
+  const diffTex = new THREE.CanvasTexture(cDiff);
+  diffTex.wrapS = THREE.RepeatWrapping;
+  diffTex.wrapT = THREE.RepeatWrapping;
+  diffTex.repeat.set(16, 16);
+
+  const normTex = new THREE.CanvasTexture(cNorm);
+  normTex.wrapS = THREE.RepeatWrapping;
+  normTex.wrapT = THREE.RepeatWrapping;
+  normTex.repeat.set(16, 16);
+
+  const roughTex = new THREE.CanvasTexture(cRough);
+  roughTex.wrapS = THREE.RepeatWrapping;
+  roughTex.wrapT = THREE.RepeatWrapping;
+  roughTex.repeat.set(16, 16);
+
+  cachedRegolithTexture = diffTex;
+  cachedRegolithNormal = normTex;
+  cachedRegolithRoughness = roughTex;
+
+  return { map: diffTex, normalMap: normTex, roughnessMap: roughTex };
+}
 
 interface InteractiveLunarMapProps {
   initialMode?: MapInteractionMode;
@@ -56,6 +191,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
   const [showObstacles, setShowObstacles] = useState<boolean>(true);
   const [showDust] = useState<boolean>(true);
   const [contourMode, setContourMode] = useState<boolean>(false);
+  const [graphicsQuality, setGraphicsQuality] = useState<'ULTRA' | 'BALANCED' | 'PERFORMANCE'>('ULTRA');
 
   // Hover & Selected Cell state for HUD
   const [hoveredCell, setHoveredCell] = useState<{
@@ -128,15 +264,22 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     camera.position.set(45, 40, 55);
     cameraRef.current = camera;
 
+    const isLowPower = graphicsQuality === 'PERFORMANCE';
+    const isUltra = graphicsQuality === 'ULTRA';
+
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
+      antialias: !isLowPower,
+      powerPreference: isLowPower ? 'low-power' : 'high-performance',
       alpha: false,
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    
+    // Adaptive pixel ratio: 1.0 on low-power devices, up to 2.0 on high-end
+    const maxPR = isLowPower ? 1.0 : isUltra ? Math.min(window.devicePixelRatio, 2.0) : Math.min(window.devicePixelRatio, 1.5);
+    renderer.setPixelRatio(maxPR);
+    
+    renderer.shadowMap.enabled = !isLowPower;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     rendererRef.current = renderer;
@@ -148,9 +291,10 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     // Harsh, low-angle directional sunlight (creates authentic lunar shadows)
     const sunLight = new THREE.DirectionalLight(0xfffaed, 3.2);
     sunLight.position.set(120, 60, -90);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    sunLight.castShadow = !isLowPower;
+    const shadowRes = isUltra ? 2048 : 1024;
+    sunLight.shadow.mapSize.width = shadowRes;
+    sunLight.shadow.mapSize.height = shadowRes;
     sunLight.shadow.camera.near = 10;
     sunLight.shadow.camera.far = 350;
     const shadowBound = 90;
@@ -521,7 +665,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       renderer.dispose();
       container.innerHTML = '';
     };
-  }, []);
+  }, [graphicsQuality]);
 
   // 2. Build / Update 3D Terrain Heightfield & Boulders
   useEffect(() => {
@@ -672,16 +816,36 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
-    const terrainMaterial = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.88,
-      metalness: 0.12,
-      flatShading: true,
-    });
+    const isPerformance = graphicsQuality === 'PERFORMANCE';
+    const isUltra = graphicsQuality === 'ULTRA';
+
+    let terrainMaterial: THREE.MeshStandardMaterial;
+
+    if (!isPerformance) {
+      const regolithTex = getLunarRegolithTextures();
+      terrainMaterial = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        map: regolithTex.map,
+        normalMap: isUltra ? regolithTex.normalMap : null,
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        roughnessMap: isUltra ? regolithTex.roughnessMap : null,
+        roughness: 0.92,
+        metalness: 0.08,
+        flatShading: false,
+      });
+    } else {
+      // Lightweight flat-shaded material for lower-end devices / battery saving
+      terrainMaterial = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.95,
+        metalness: 0.05,
+        flatShading: true,
+      });
+    }
 
     const terrainMesh = new THREE.Mesh(geometry, terrainMaterial);
-    terrainMesh.receiveShadow = true;
-    terrainMesh.castShadow = true;
+    terrainMesh.receiveShadow = !isPerformance;
+    terrainMesh.castShadow = !isPerformance;
     scene.add(terrainMesh);
     terrainMeshRef.current = terrainMesh;
 
@@ -697,7 +861,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       scene.add(gridHelper);
       gridHelperRef.current = gridHelper;
     }
-  }, [terrain, contourMode, showGrid, showObstacles]);
+  }, [terrain, contourMode, showGrid, showObstacles, graphicsQuality]);
 
   // 3. Build / Update Start (Green) & Destination (Red) 3D Beacons
   useEffect(() => {
@@ -1471,6 +1635,22 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
           >
             ROCKS
           </button>
+
+          <div className="h-4 w-[1px] bg-slate-800 mx-0.5" />
+
+          {/* Graphics Quality Preset Selector (Ultra Realism / Balanced / Performance) */}
+          <div className="flex items-center gap-1 bg-slate-900/90 rounded border border-slate-800 px-1.5 py-0.5" title="Adaptive Graphics Quality Mode">
+            <Sparkles className="w-3 h-3 text-cyan-400" />
+            <select
+              value={graphicsQuality}
+              onChange={(e) => setGraphicsQuality(e.target.value as 'ULTRA' | 'BALANCED' | 'PERFORMANCE')}
+              className="bg-transparent text-cyan-300 text-[11px] font-mono focus:outline-none cursor-pointer"
+            >
+              <option value="ULTRA" className="bg-slate-900 text-cyan-300">HQ: HYPER REALISM</option>
+              <option value="BALANCED" className="bg-slate-900 text-slate-200">HQ: BALANCED 60FPS</option>
+              <option value="PERFORMANCE" className="bg-slate-900 text-emerald-400">HQ: LOW-END / BATTERY</option>
+            </select>
+          </div>
 
           <div className="h-4 w-[1px] bg-slate-800 mx-0.5" />
 

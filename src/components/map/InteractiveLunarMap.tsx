@@ -238,99 +238,259 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     scene.add(reticleMesh);
     cursorReticleRef.current = reticleMesh;
 
-    // --- Detailed 3D Rover Assembly ---
+    // =========================================================================
+    // HIGH-DEFINITION 6-WHEEL ROCKER-BOGIE LUNAR ROVER ASSEMBLY (VIPER / ARTEMIS SPEC)
+    // =========================================================================
     const roverGroup = new THREE.Group();
 
-    // Chassis / Body (Aerospace Gold Foil & Composite White)
-    const bodyGeo = new THREE.BoxGeometry(1.8, 0.75, 2.4);
+    // 1. Main Avionics Bay / Core Chassis (Aerospace Composite White)
+    const bodyGeo = new THREE.BoxGeometry(1.9, 0.72, 2.6);
     const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xd4d4d8,
-      metalness: 0.5,
-      roughness: 0.35,
+      color: 0xf1f5f9,
+      metalness: 0.65,
+      roughness: 0.28,
     });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 0.65;
+    body.position.y = 0.76;
     body.castShadow = true;
     body.receiveShadow = true;
     roverGroup.add(body);
 
-    // Thermal Insulation Gold Foil Trim
-    const foilGeo = new THREE.BoxGeometry(1.82, 0.25, 2.42);
+    // 2. Underside Equipment Pod with Multi-Layer Thermal MLI Gold Insulation
+    const foilGeo = new THREE.BoxGeometry(1.92, 0.32, 2.62);
     const foilMat = new THREE.MeshStandardMaterial({
       color: 0xd97706,
-      metalness: 0.8,
-      roughness: 0.2,
+      metalness: 0.92,
+      roughness: 0.16,
     });
     const foil = new THREE.Mesh(foilGeo, foilMat);
-    foil.position.y = 0.4;
+    foil.position.y = 0.44;
+    foil.castShadow = true;
     roverGroup.add(foil);
 
-    // Top Solar Array Deck
-    const solarDeckGeo = new THREE.BoxGeometry(1.65, 0.06, 2.15);
+    // 3. Heavy-Duty Side Equipment Rails & Corner Bumpers (Black Anodized Titanium)
+    const railMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.85,
+      roughness: 0.25,
+    });
+    const leftRailGeo = new THREE.BoxGeometry(0.12, 0.2, 2.7);
+    const leftRail = new THREE.Mesh(leftRailGeo, railMat);
+    leftRail.position.set(-1.0, 0.75, 0);
+    const rightRail = new THREE.Mesh(leftRailGeo, railMat);
+    rightRail.position.set(1.0, 0.75, 0);
+    roverGroup.add(leftRail, rightRail);
+
+    // Front & Rear Collision Bumpers
+    const bumperGeo = new THREE.BoxGeometry(2.1, 0.14, 0.14);
+    const frontBumper = new THREE.Mesh(bumperGeo, railMat);
+    frontBumper.position.set(0, 0.48, 1.36);
+    const rearBumper = new THREE.Mesh(bumperGeo, railMat);
+    rearBumper.position.set(0, 0.48, -1.36);
+    roverGroup.add(frontBumper, rearBumper);
+
+    // 4. High-Efficiency Photovoltaic Solar Array Deck with Metallic Busbars
+    const solarDeckGeo = new THREE.BoxGeometry(1.76, 0.05, 2.38);
     const solarDeckMat = new THREE.MeshStandardMaterial({
       color: 0x091428,
-      metalness: 0.9,
-      roughness: 0.1,
+      metalness: 0.95,
+      roughness: 0.08,
     });
     const solarDeck = new THREE.Mesh(solarDeckGeo, solarDeckMat);
-    solarDeck.position.y = 1.06;
+    solarDeck.position.y = 1.15;
     solarDeck.castShadow = true;
     roverGroup.add(solarDeck);
 
-    // Sensor Mast
-    const mastGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 8);
-    const mastMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.6 });
+    // Solar Cell Gridlines
+    const gridLineGeo = new THREE.BoxGeometry(1.78, 0.055, 0.04);
+    const gridLineMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.9,
+      roughness: 0.2,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.2,
+    });
+    for (let gi = -1.0; gi <= 1.0; gi += 0.4) {
+      const gMesh = new THREE.Mesh(gridLineGeo, gridLineMat);
+      gMesh.position.set(0, 1.16, gi);
+      roverGroup.add(gMesh);
+    }
+
+    // 5. Rear Radioisotope Thermoelectric Generator (RTG) with Cooling Fins
+    const rtgGroup = new THREE.Group();
+    const rtgCoreGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.75, 16);
+    const rtgCoreMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.85, roughness: 0.25 });
+    const rtgCore = new THREE.Mesh(rtgCoreGeo, rtgCoreMat);
+    rtgCore.rotation.x = Math.PI / 2;
+    rtgGroup.add(rtgCore);
+
+    // Cooling fin rings
+    const finGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.04, 16);
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9 });
+    for (let fi = -0.3; fi <= 0.3; fi += 0.15) {
+      const fin = new THREE.Mesh(finGeo, finMat);
+      fin.rotation.x = Math.PI / 2;
+      fin.position.z = fi;
+      rtgGroup.add(fin);
+    }
+    rtgGroup.position.set(0, 0.88, -1.2);
+    roverGroup.add(rtgGroup);
+
+    // 6. Steerable High-Gain Parabolic Communications Dish (Pointing Earthward)
+    const antennaGroup = new THREE.Group();
+    const dishGeo = new THREE.SphereGeometry(0.38, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+    const dishMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      metalness: 0.88,
+      roughness: 0.2,
+      side: THREE.DoubleSide,
+    });
+    const dish = new THREE.Mesh(dishGeo, dishMat);
+    dish.rotation.x = Math.PI / 1.5;
+    dish.rotation.y = -Math.PI / 4;
+    antennaGroup.add(dish);
+
+    const feedHornGeo = new THREE.CylinderGeometry(0.02, 0.03, 0.35, 8);
+    const feedHornMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 });
+    const feedHorn = new THREE.Mesh(feedHornGeo, feedHornMat);
+    feedHorn.position.set(0.12, 0.18, 0.12);
+    feedHorn.rotation.x = Math.PI / 1.5;
+    antennaGroup.add(feedHorn);
+
+    antennaGroup.position.set(-0.6, 1.35, -0.65);
+    roverGroup.add(antennaGroup);
+
+    // 7. Sensor Mast & Pan-Tilt Stereo NavCam / Mastcam Head
+    const mastGeo = new THREE.CylinderGeometry(0.06, 0.08, 1.3, 12);
+    const mastMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.75, roughness: 0.3 });
     const mast = new THREE.Mesh(mastGeo, mastMat);
-    mast.position.set(0, 1.55, 0.8);
+    mast.position.set(0, 1.8, 0.85);
     roverGroup.add(mast);
 
-    // LiDAR Scanner Head
-    const lidarHeadGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.2, 16);
+    // Dual Stereo NavCam Housing
+    const cameraHeadGeo = new THREE.BoxGeometry(0.55, 0.22, 0.32);
+    const cameraHeadMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+    const cameraHead = new THREE.Mesh(cameraHeadGeo, cameraHeadMat);
+    cameraHead.position.set(0, 2.45, 0.85);
+
+    // Dual Sapphire Camera Lenses (Left & Right Optical Apertures)
+    const lensGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.08, 16);
+    const lensMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.95,
+      roughness: 0.05,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.65,
+    });
+    const leftLens = new THREE.Mesh(lensGeo, lensMat);
+    leftLens.rotation.x = Math.PI / 2;
+    leftLens.position.set(-0.18, 0, 0.17);
+    const rightLens = new THREE.Mesh(lensGeo, lensMat);
+    rightLens.rotation.x = Math.PI / 2;
+    rightLens.position.set(0.18, 0, 0.17);
+    cameraHead.add(leftLens, rightLens);
+    roverGroup.add(cameraHead);
+
+    // 8. 360° Spinning LiDAR Scanner Head
+    const lidarHeadGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.18, 24);
     const lidarHeadMat = new THREE.MeshStandardMaterial({
       color: 0x06b6d4,
+      metalness: 0.85,
+      roughness: 0.2,
       emissive: 0x0891b2,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.75,
     });
     const lidarHead = new THREE.Mesh(lidarHeadGeo, lidarHeadMat);
-    lidarHead.position.set(0, 2.15, 0.8);
+    lidarHead.position.set(0, 2.65, 0.85);
     roverGroup.add(lidarHead);
     lidarDishRef.current = lidarHead;
 
-    // Headlights
-    const headLightLeft = new THREE.SpotLight(0xe0f2fe, 4.0, 35, Math.PI / 4.5, 0.35, 1.2);
-    headLightLeft.position.set(-0.6, 0.9, 1.2);
-    headLightLeft.target.position.set(-0.6, 0, 12);
+    // 9. Articulated Robotic Science Sample Arm (Front Left)
+    const armGroup = new THREE.Group();
+    const armSegment1Geo = new THREE.CylinderGeometry(0.04, 0.05, 0.65, 8);
+    const armMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8 });
+    const armSeg1 = new THREE.Mesh(armSegment1Geo, armMat);
+    armSeg1.position.set(0, 0.3, 0.2);
+    armSeg1.rotation.x = Math.PI / 4;
+    armGroup.add(armSeg1);
+
+    const drillTurretGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.25, 12);
+    const drillTurretMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.9 });
+    const drillTurret = new THREE.Mesh(drillTurretGeo, drillTurretMat);
+    drillTurret.position.set(0, 0.55, 0.45);
+    drillTurret.rotation.x = Math.PI / 2;
+    armGroup.add(drillTurret);
+
+    armGroup.position.set(0.65, 0.55, 1.15);
+    roverGroup.add(armGroup);
+
+    // 10. Forward Driving LED Spotlights
+    const headLightLeft = new THREE.SpotLight(0xe0f2fe, 5.0, 40, Math.PI / 4.5, 0.35, 1.2);
+    headLightLeft.position.set(-0.65, 0.95, 1.35);
+    headLightLeft.target.position.set(-0.65, 0, 15);
     roverGroup.add(headLightLeft);
     roverGroup.add(headLightLeft.target);
 
-    const headLightRight = new THREE.SpotLight(0xe0f2fe, 4.0, 35, Math.PI / 4.5, 0.35, 1.2);
-    headLightRight.position.set(0.6, 0.9, 1.2);
-    headLightRight.target.position.set(0.6, 0, 12);
+    const headLightRight = new THREE.SpotLight(0xe0f2fe, 5.0, 40, Math.PI / 4.5, 0.35, 1.2);
+    headLightRight.position.set(0.65, 0.95, 1.35);
+    headLightRight.target.position.set(0.65, 0, 15);
     roverGroup.add(headLightRight);
     roverGroup.add(headLightRight.target);
 
-    // 4 Articulated Wheels
-    const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 18);
+    // 11. 6 Articulated Rocker-Bogie Wheels (VIPER / Perseverance 6-Wheel Drive)
+    const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.32, 24);
     const wheelMat = new THREE.MeshStandardMaterial({
       color: 0x1e293b,
-      metalness: 0.3,
-      roughness: 0.8,
+      metalness: 0.45,
+      roughness: 0.85,
     });
+    const hubCapGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.34, 16);
+    const hubCapMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.9,
+      roughness: 0.2,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.25,
+    });
+
+    const rockerArmMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+
     const wheelOffsets = [
-      [-1.1, 0.38, 0.85],
-      [1.1, 0.38, 0.85],
-      [-1.1, 0.38, -0.85],
-      [1.1, 0.38, -0.85],
+      // Left Side: Front, Mid, Rear
+      [-1.25, 0.38, 0.95],
+      [-1.32, 0.38, 0.0],
+      [-1.25, 0.38, -0.95],
+      // Right Side: Front, Mid, Rear
+      [1.25, 0.38, 0.95],
+      [1.32, 0.38, 0.0],
+      [1.25, 0.38, -0.95],
     ];
 
     wheelsRef.current = [];
-    wheelOffsets.forEach(([wx, wy, wz]) => {
-      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(wx, wy, wz);
-      wheel.castShadow = true;
-      roverGroup.add(wheel);
-      wheelsRef.current.push(wheel);
+    wheelOffsets.forEach(([wx, wy, wz], idx) => {
+      const wheelAssembly = new THREE.Group();
+
+      const wheelMesh = new THREE.Mesh(wheelGeo, wheelMat);
+      wheelMesh.rotation.z = Math.PI / 2;
+      wheelMesh.castShadow = true;
+      wheelMesh.receiveShadow = true;
+      wheelAssembly.add(wheelMesh);
+
+      const hubCap = new THREE.Mesh(hubCapGeo, hubCapMat);
+      hubCap.rotation.z = Math.PI / 2;
+      wheelAssembly.add(hubCap);
+
+      wheelAssembly.position.set(wx, wy, wz);
+      roverGroup.add(wheelAssembly);
+      wheelsRef.current.push(wheelMesh);
+
+      // Rocker / Bogie Linkage Arm connecting to Chassis
+      const isLeft = wx < 0;
+      const strutGeo = new THREE.BoxGeometry(0.08, 0.08, Math.abs(wz) > 0.1 ? 0.95 : 0.4);
+      const strut = new THREE.Mesh(strutGeo, rockerArmMat);
+      strut.position.set(isLeft ? -1.1 : 1.1, 0.55, wz * 0.5);
+      strut.rotation.x = wz > 0 ? -0.2 : wz < 0 ? 0.2 : 0;
+      roverGroup.add(strut);
     });
 
     scene.add(roverGroup);
@@ -418,14 +578,25 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     const pos = geometry.attributes.position;
     const colors = new Float32Array(pos.count * 3);
 
-    // Shared Boulder geometries for performance
-    const boulderGeo1 = new THREE.DodecahedronGeometry(1.2, 1);
-    const boulderGeo2 = new THREE.IcosahedronGeometry(0.9, 0);
-    const boulderMat = new THREE.MeshStandardMaterial({
+    // Shared Organic Smoothed Boulder Geometries (Weathered Basalt Impact Ejecta)
+    const boulderGeo1 = new THREE.DodecahedronGeometry(1.2, 2);
+    const boulderGeo2 = new THREE.IcosahedronGeometry(1.0, 2);
+    const boulderGeo3 = new THREE.OctahedronGeometry(1.1, 2);
+    boulderGeo1.computeVertexNormals();
+    boulderGeo2.computeVertexNormals();
+    boulderGeo3.computeVertexNormals();
+
+    const boulderMat1 = new THREE.MeshStandardMaterial({
       color: 0x475569,
-      roughness: 0.9,
+      roughness: 0.88,
+      metalness: 0.15,
+      flatShading: false,
+    });
+    const boulderMat2 = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      roughness: 0.92,
       metalness: 0.1,
-      flatShading: true,
+      flatShading: false,
     });
 
     let idx = 0;
@@ -458,20 +629,21 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
           g = 0.12;
           b = 0.12;
 
-          // Place 3D Boulder Object
+          // Place 3D Boulder Object (Discrete Physical Rock Entity resting atop Regolith)
           if (showObstacles && bouldersGroupRef.current) {
-            const boulderMesh = new THREE.Mesh(
-              (x + y) % 2 === 0 ? boulderGeo1 : boulderGeo2,
-              boulderMat
-            );
+            const geoChoice = (x + y) % 3 === 0 ? boulderGeo1 : (x + y) % 3 === 1 ? boulderGeo2 : boulderGeo3;
+            const matChoice = (x * y) % 2 === 0 ? boulderMat1 : boulderMat2;
+            const boulderMesh = new THREE.Mesh(geoChoice, matChoice);
             const bx = x * resolution - halfW;
             const bz = y * resolution - halfH;
-            boulderMesh.position.set(bx, cell.elevation + 0.6, bz);
-            boulderMesh.rotation.set((x * 17) % 3, (y * 23) % 3, (x * y) % 3);
+
+            // Position resting naturally on ground surface with base embedded
+            boulderMesh.position.set(bx, cell.elevation + 0.35, bz);
+            boulderMesh.rotation.set((x * 1.7) % 3, (y * 2.3) % 3, (x * y * 0.7) % 3);
             boulderMesh.scale.set(
-              0.8 + ((x * 7) % 5) * 0.15,
-              0.8 + ((y * 11) % 5) * 0.2,
-              0.8 + ((x * y) % 5) * 0.15
+              0.85 + ((x * 7) % 5) * 0.12,
+              0.75 + ((y * 11) % 5) * 0.15,
+              0.85 + ((x * y) % 5) * 0.12
             );
             boulderMesh.castShadow = true;
             boulderMesh.receiveShadow = true;
@@ -726,22 +898,33 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       const halfW = (width * resolution) / 2;
       const halfH = (height * resolution) / 2;
 
-      // Position rover in world coordinates
+      // Position rover in world coordinates with smooth bilinear elevation interpolation
       const rx = roverState.x * resolution - halfW;
       const rz = roverState.y * resolution - halfH;
-      const cy = Math.max(0, Math.min(height - 1, Math.round(roverState.y)));
-      const cx = Math.max(0, Math.min(width - 1, Math.round(roverState.x)));
-      const rElevation = cells[cy]?.[cx]?.elevation ?? 0;
+      
+      // Continuous bilinear interpolation across neighboring grid vertices
+      const x0 = Math.max(0, Math.min(width - 1, Math.floor(roverState.x)));
+      const x1 = Math.max(0, Math.min(width - 1, Math.ceil(roverState.x)));
+      const y0 = Math.max(0, Math.min(height - 1, Math.floor(roverState.y)));
+      const y1 = Math.max(0, Math.min(height - 1, Math.ceil(roverState.y)));
+      const fx = roverState.x - x0;
+      const fy = roverState.y - y0;
+
+      const e00 = cells[y0]?.[x0]?.elevation ?? 0;
+      const e10 = cells[y0]?.[x1]?.elevation ?? 0;
+      const e01 = cells[y1]?.[x0]?.elevation ?? 0;
+      const e11 = cells[y1]?.[x1]?.elevation ?? 0;
+      const rElevation = (1 - fx) * (1 - fy) * e00 + fx * (1 - fy) * e10 + (1 - fx) * fy * e01 + fx * fy * e11;
 
       rover.position.set(rx, rElevation, rz);
       rover.rotation.y = -roverState.heading + Math.PI / 2;
       rover.rotation.x = (roverState.pitch * Math.PI) / 180;
       rover.rotation.z = -(roverState.roll * Math.PI) / 180;
 
-      // Rotate wheels with speed
-      if (roverState.velocity > 0.01) {
+      // Rotate all 6 wheels with movement velocity
+      if (Math.abs(roverState.velocity) > 0.001) {
         wheelsRef.current.forEach((wheel) => {
-          wheel.rotation.x += roverState.velocity * 0.12;
+          wheel.rotation.x += roverState.velocity * 0.15;
         });
       }
 

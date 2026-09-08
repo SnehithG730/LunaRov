@@ -183,19 +183,6 @@ export class TerrainGenerator {
           }
         }
 
-        // Apply boulders if enabled
-        if (toggles.enableRocks) {
-          for (const boulder of boulders) {
-            const dx = x - boulder.x;
-            const dy = y - boulder.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < boulder.radius) {
-              const t = dist / boulder.radius;
-              elev += boulder.height * (1.0 - t * t);
-            }
-          }
-        }
-
         elevations[y][x] = elev;
         if (elev < minElevation) minElevation = elev;
         if (elev > maxElevation) maxElevation = elev;

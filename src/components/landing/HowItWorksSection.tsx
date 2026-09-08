@@ -49,7 +49,7 @@ export const HowItWorksSection: React.FC = () => {
   ];
 
   return (
-    <section className="py-20 px-4 sm:px-8 bg-[#030611] relative z-20 border-t border-cyan-950/70">
+    <section className="py-20 px-4 sm:px-8 bg-[#030611]/75 backdrop-blur-md relative z-20 border-t border-cyan-950/70">
       <div className="max-w-7xl mx-auto space-y-12">
         {/* Section Header - Dual Tone White & Galaxy Theme */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-cyan-950 pb-6 text-left">

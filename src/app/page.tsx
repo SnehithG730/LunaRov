@@ -8,12 +8,19 @@ import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
 import { LandingFooter } from '@/components/landing/LandingFooter';
 import { EducationalModal } from '@/components/help/EducationalModal';
 import { SpaceEntranceAuth, AuthUserData } from '@/components/auth/SpaceEntranceAuth';
+import { SolarSystemBackground } from '@/components/background/SolarSystemBackground';
+import { PlanetMoonExplorerModal } from '@/components/celestial/PlanetMoonExplorerModal';
+import { PlanetData, MoonData, SOLAR_SYSTEM_PLANETS } from '@/lib/data/celestialData';
 import { useAuthStore } from '@/lib/authStore';
 
 export default function LandingPage() {
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
   const [forceShowLogin, setForceShowLogin] = useState(false);
   const [hasSkipped, setHasSkipped] = useState(false);
+
+  // Planet & Moon 3D Explorer state
+  const [selectedPlanet, setSelectedPlanet] = useState<PlanetData | null>(null);
+  const [isPlanetModalOpen, setIsPlanetModalOpen] = useState(false);
 
   const { user, hasCheckedStorage, initializeAuth, login } = useAuthStore();
 
@@ -31,8 +38,25 @@ export default function LandingPage() {
     setHasSkipped(true);
   };
 
+  const handlePlanetDoubleClick = (planet: PlanetData) => {
+    setSelectedPlanet(planet);
+    setIsPlanetModalOpen(true);
+  };
+
+  const handleSelectMoon = (moon: MoonData) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lunarov_selected_celestial_moon', JSON.stringify(moon));
+    }
+  };
+
   return (
-    <main className="min-h-screen flex flex-col bg-[#050811] text-slate-100 selection:bg-cyan-500 selection:text-black">
+    <main className="min-h-screen flex flex-col bg-[#030612] text-slate-100 selection:bg-cyan-500 selection:text-black relative">
+      {/* 3D WebGL Solar System Background with Scroll Camera Interpolation */}
+      <SolarSystemBackground
+        onPlanetDoubleClick={handlePlanetDoubleClick}
+        activePlanetId={selectedPlanet?.id}
+      />
+
       {/* 8-Step Interactive Space Login & Launch Gate */}
       {shouldShowEntrance && (
         <SpaceEntranceAuth
@@ -50,10 +74,15 @@ export default function LandingPage() {
         onOpenLogin={() => setForceShowLogin(true)}
       />
 
-      {/* Hero Section with 3D Visual and CTAs */}
-      <HeroSection />
+      {/* Hero Section with Left Typography and Planet Quick Actions */}
+      <HeroSection
+        onOpenPlanetInspector={(planet) => {
+          setSelectedPlanet(planet || SOLAR_SYSTEM_PLANETS[2]);
+          setIsPlanetModalOpen(true);
+        }}
+      />
 
-      {/* Feature Modules Breakdown */}
+      {/* Feature Modules Breakdown with Translucent Galaxy Card Layering */}
       <FeaturesSection />
 
       {/* How It Works Operational Lifecycle */}
@@ -66,6 +95,14 @@ export default function LandingPage() {
       <EducationalModal
         isOpen={isAboutModalOpen}
         onClose={() => setIsAboutModalOpen(false)}
+      />
+
+      {/* 3D Hyper-Realistic Moon Inspector & NASA/ESA Telemetry Modal */}
+      <PlanetMoonExplorerModal
+        planet={selectedPlanet}
+        isOpen={isPlanetModalOpen}
+        onClose={() => setIsPlanetModalOpen(false)}
+        onSelectMoon={handleSelectMoon}
       />
     </main>
   );

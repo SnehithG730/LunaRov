@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useId } from 'react';
+import * as THREE from 'three';
 import {
   User,
   Mail,
@@ -30,12 +31,12 @@ interface SpaceEntranceAuthProps {
 }
 
 type AuthPhase =
-  | 'INITIAL'           // 1. Initial Screen: Floating rocket, Earth & Satellite, "ENTER ->" button
-  | 'ORBITING'          // 2. Rocket enters orbital circular path around center
-  | 'FORM_ACTIVE'       // 3 & 4. Cloud login form appears with real-time validation
-  | 'AUTHENTICATING'   // 5. Authenticating spinner & verification
-  | 'LAUNCHING'         // 6. Rocket ignites flame plume and launches upward
-  | 'WARP_TRANSITION';  // 7. Warp-speed tunnel & "Welcome Aboard!" message
+  | 'INITIAL'           // 1. Initial Screen: Floating 3D rocket, Earth, Moon & Satellite, "ENTER ->"
+  | 'ORBITING'          // 2. Rocket enters 3D orbital path around Earth
+  | 'FORM_ACTIVE'       // 3 & 4. 3D Cloud login form with real-time validation
+  | 'AUTHENTICATING'   // 5. Holographic Authenticating spinner & energy pulse
+  | 'LAUNCHING'         // 6. Rocket ignites hyper-thrust flame plume and launches
+  | 'WARP_TRANSITION';  // 7. Warp-speed hyperspace tunnel & "Welcome Aboard!"
 
 export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
   onLoginSuccess,
@@ -47,15 +48,17 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Form touched states for UX validation
+  // Form touched states for validation
   const [touched, setTouched] = useState({
     name: false,
     email: false,
     password: false,
   });
 
-  // Canvas for background cosmic stars & particles
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const threeContainerRef = useRef<HTMLDivElement | null>(null);
+  const phaseRef = useRef<AuthPhase>('INITIAL');
+  const animTimeRef = useRef<number>(0);
+  const phaseStartTimeRef = useRef<number>(0);
 
   // Validation logic
   const isNameValid = name.trim().length >= 2;
@@ -63,84 +66,504 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
   const isPasswordValid = password.length >= 6;
   const isFormValid = isNameValid && isEmailValid && isPasswordValid;
 
-  // Starfield & warp animation loop
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    phaseRef.current = phase;
+    phaseStartTimeRef.current = animTimeRef.current;
+  }, [phase]);
 
-    let animId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+  // =========================================================================
+  // HYPER-REALISTIC THREE.JS 3D CELESTIAL & SPACECRAFT ENGINE
+  // =========================================================================
+  useEffect(() => {
+    const container = threeContainerRef.current;
+    if (!container) return;
 
+    // 1. Scene setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x030712, 0.0006);
+
+    // 2. Perspective Camera
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      container.clientWidth / container.clientHeight,
+      0.1,
+      2500
+    );
+    camera.position.set(0, 14, 65);
+
+    // 3. WebGL Renderer with High-End Lighting & ACES Color Grading
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.3;
+    container.appendChild(renderer.domElement);
+
+    // 4. Lighting Rig
+    const ambientLight = new THREE.AmbientLight(0x0c1e38, 1.3);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.8);
+    sunLight.position.set(90, 45, 80);
+    scene.add(sunLight);
+
+    const cyanRimLight = new THREE.DirectionalLight(0x00d2ff, 3.2);
+    cyanRimLight.position.set(-80, -20, -50);
+    scene.add(cyanRimLight);
+
+    const purpleCosmicLight = new THREE.PointLight(0xa855f7, 2.5, 180);
+    purpleCosmicLight.position.set(30, 40, -40);
+    scene.add(purpleCosmicLight);
+
+    // 5. Deep Space Starfield (2,200 stars)
+    const starCount = 2200;
+    const starGeo = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(starCount * 3);
+    const starColors = new Float32Array(starCount * 3);
+
+    for (let i = 0; i < starCount; i++) {
+      starPositions[i * 3] = (Math.random() - 0.5) * 1400;
+      starPositions[i * 3 + 1] = (Math.random() - 0.5) * 1400;
+      starPositions[i * 3 + 2] = (Math.random() - 0.5) * 1400;
+
+      const isCyan = Math.random() > 0.85;
+      const isBlue = Math.random() > 0.65;
+      starColors[i * 3] = isCyan ? 0.2 : isBlue ? 0.6 : 1.0;
+      starColors[i * 3 + 1] = isCyan ? 0.9 : isBlue ? 0.8 : 1.0;
+      starColors[i * 3 + 2] = 1.0;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+    const starMat = new THREE.PointsMaterial({
+      size: 1.9,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const starField = new THREE.Points(starGeo, starMat);
+    scene.add(starField);
+
+    // 6. Hyper-Realistic 3D Earth (Day/Night Texture & Rayleigh Atmosphere)
+    const earthRadius = 26;
+    const earthGeo = new THREE.SphereGeometry(earthRadius, 64, 64);
+
+    const earthCanvas = document.createElement('canvas');
+    earthCanvas.width = 1024;
+    earthCanvas.height = 512;
+    const eCtx = earthCanvas.getContext('2d');
+    if (eCtx) {
+      const oceanGrad = eCtx.createLinearGradient(0, 0, 0, 512);
+      oceanGrad.addColorStop(0, '#061b3b');
+      oceanGrad.addColorStop(0.5, '#0b2e61');
+      oceanGrad.addColorStop(1, '#031124');
+      eCtx.fillStyle = oceanGrad;
+      eCtx.fillRect(0, 0, 1024, 512);
+
+      // Continents with topographic detail
+      eCtx.fillStyle = '#1c4a2b';
+      for (let i = 0; i < 45; i++) {
+        const cx = Math.random() * 1024;
+        const cy = 90 + Math.random() * 332;
+        const cr = 35 + Math.random() * 90;
+        eCtx.beginPath();
+        eCtx.arc(cx, cy, cr, 0, Math.PI * 2);
+        eCtx.fill();
+      }
+      // Glowing Night-Side City Lights
+      eCtx.fillStyle = '#ffdf78';
+      for (let i = 0; i < 180; i++) {
+        const cx = Math.random() * 1024;
+        const cy = 110 + Math.random() * 300;
+        eCtx.fillRect(cx, cy, 2.5, 2.5);
+      }
+    }
+    const earthTexture = new THREE.CanvasTexture(earthCanvas);
+
+    const earthMat = new THREE.MeshStandardMaterial({
+      map: earthTexture,
+      roughness: 0.6,
+      metalness: 0.15,
+    });
+    const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+    earthMesh.position.set(0, -34, 0);
+    scene.add(earthMesh);
+
+    // Glowing Atmospheric Halo
+    const atmoGeo = new THREE.SphereGeometry(earthRadius * 1.045, 64, 64);
+    const atmoMat = new THREE.MeshBasicMaterial({
+      color: 0x00d2ff,
+      transparent: true,
+      opacity: 0.32,
+      side: THREE.BackSide,
+    });
+    const atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
+    atmoMesh.position.copy(earthMesh.position);
+    scene.add(atmoMesh);
+
+    // 7. Hyper-Realistic 3D Moon with Procedural Craters
+    const moonRadius = 6.5;
+    const moonGeo = new THREE.SphereGeometry(moonRadius, 48, 48);
+
+    const moonCanvas = document.createElement('canvas');
+    moonCanvas.width = 512;
+    moonCanvas.height = 256;
+    const mCtx = moonCanvas.getContext('2d');
+    if (mCtx) {
+      mCtx.fillStyle = '#71717a';
+      mCtx.fillRect(0, 0, 512, 256);
+      // Realistic Craters
+      for (let i = 0; i < 60; i++) {
+        const cx = Math.random() * 512;
+        const cy = Math.random() * 256;
+        const cr = 4 + Math.random() * 18;
+        mCtx.fillStyle = '#3f3f46';
+        mCtx.beginPath();
+        mCtx.arc(cx, cy, cr, 0, Math.PI * 2);
+        mCtx.fill();
+        mCtx.strokeStyle = '#a1a1aa';
+        mCtx.lineWidth = 1.5;
+        mCtx.stroke();
+      }
+    }
+    const moonTexture = new THREE.CanvasTexture(moonCanvas);
+    const moonMat = new THREE.MeshStandardMaterial({
+      map: moonTexture,
+      roughness: 0.85,
+      metalness: 0.05,
+    });
+    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    moonMesh.position.set(-28, 20, -15);
+    scene.add(moonMesh);
+
+    // 8. Distant Ringed Planet (Saturn/Kronos)
+    const planetGeo = new THREE.SphereGeometry(4.5, 32, 32);
+    const planetMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      roughness: 0.7,
+    });
+    const ringedPlanet = new THREE.Mesh(planetGeo, planetMat);
+    ringedPlanet.position.set(38, 24, -35);
+
+    const planetRingGeo = new THREE.RingGeometry(5.8, 9.2, 48);
+    const planetRingMat = new THREE.MeshBasicMaterial({
+      color: 0xfde68a,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.6,
+    });
+    const planetRing = new THREE.Mesh(planetRingGeo, planetRingMat);
+    planetRing.rotation.x = Math.PI / 2.3;
+    ringedPlanet.add(planetRing);
+    scene.add(ringedPlanet);
+
+    // 9. Interactive Mouse Drag for 3D Moon & Celestial Bodies
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+
+    const onMouseDown = (e: MouseEvent) => {
+      isDragging = true;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - previousMousePosition.x;
+      const deltaY = e.clientY - previousMousePosition.y;
+
+      if (moonMesh) {
+        moonMesh.rotation.y += deltaX * 0.01;
+        moonMesh.rotation.x += deltaY * 0.01;
+      }
+      if (earthMesh) {
+        earthMesh.rotation.y += deltaX * 0.005;
+      }
+
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+    };
+
+    container.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    // 10. Sleek 3D Spacecraft Model
+    const rocketGroup = new THREE.Group();
+
+    // Fuselage
+    const bodyGeo = new THREE.CylinderGeometry(1.25, 1.45, 7.8, 32);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      metalness: 0.85,
+      roughness: 0.2,
+    });
+    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    rocketGroup.add(bodyMesh);
+
+    // Aerodynamic Nose Cone
+    const noseGeo = new THREE.ConeGeometry(1.25, 3.4, 32);
+    const noseMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      metalness: 0.75,
+      roughness: 0.2,
+    });
+    const noseMesh = new THREE.Mesh(noseGeo, noseMat);
+    noseMesh.position.y = 5.6;
+    rocketGroup.add(noseMesh);
+
+    // Cockpit Visor (Glowing Cyan)
+    const visorGeo = new THREE.SphereGeometry(0.55, 16, 16);
+    const visorMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const visorMesh = new THREE.Mesh(visorGeo, visorMat);
+    visorMesh.position.set(0, 2.4, 1.05);
+    rocketGroup.add(visorMesh);
+
+    // Stabilizer Fins (3 fins)
+    for (let i = 0; i < 3; i++) {
+      const angle = (i * Math.PI * 2) / 3;
+      const finGeo = new THREE.BoxGeometry(0.2, 3.2, 1.6);
+      const finMat = new THREE.MeshStandardMaterial({
+        color: 0xdc2626,
+        metalness: 0.8,
+        roughness: 0.2,
+      });
+      const finMesh = new THREE.Mesh(finGeo, finMat);
+      finMesh.position.set(Math.cos(angle) * 1.55, -2.4, Math.sin(angle) * 1.55);
+      finMesh.rotation.y = -angle;
+      rocketGroup.add(finMesh);
+    }
+
+    // Engine Nozzle & Glowing Thruster Plume
+    const nozzleGeo = new THREE.CylinderGeometry(1.0, 1.45, 1.2, 32);
+    const nozzleMat = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      metalness: 0.9,
+      roughness: 0.35,
+    });
+    const nozzleMesh = new THREE.Mesh(nozzleGeo, nozzleMat);
+    nozzleMesh.position.y = -4.5;
+    rocketGroup.add(nozzleMesh);
+
+    const plumeGeo = new THREE.ConeGeometry(1.1, 4.8, 32);
+    const plumeMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const plumeMesh = new THREE.Mesh(plumeGeo, plumeMat);
+    plumeMesh.position.y = -6.9;
+    plumeMesh.rotation.x = Math.PI;
+    rocketGroup.add(plumeMesh);
+
+    const thrusterLight = new THREE.PointLight(0x00e5ff, 3.5, 20);
+    thrusterLight.position.set(0, -5.5, 0);
+    rocketGroup.add(thrusterLight);
+
+    rocketGroup.position.set(0, 4, 18);
+    scene.add(rocketGroup);
+
+    // 11. Glowing Blue Orbital Ring
+    const ringCurve = new THREE.EllipseCurve(0, -34, 38, 22, 0, 2 * Math.PI, false, 0);
+    const ringPoints = ringCurve.getPoints(120).map((p) => new THREE.Vector3(p.x, 0, p.y));
+    const ringGeo = new THREE.BufferGeometry().setFromPoints(ringPoints);
+    const ringMat = new THREE.LineBasicMaterial({
+      color: 0x00d2ff,
+      transparent: true,
+      opacity: 0.35,
+    });
+    const orbitalRing = new THREE.Line(ringGeo, ringMat);
+    orbitalRing.rotation.x = Math.PI / 4.5;
+    orbitalRing.rotation.z = -Math.PI / 12;
+    scene.add(orbitalRing);
+
+    // 12. Orbiting Satellite
+    const satGroup = new THREE.Group();
+    const satBodyGeo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+    const satBodyMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      metalness: 0.95,
+      roughness: 0.1,
+    });
+    const satBody = new THREE.Mesh(satBodyGeo, satBodyMat);
+    satGroup.add(satBody);
+
+    const wingGeo = new THREE.BoxGeometry(2.8, 0.8, 0.08);
+    const wingMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      metalness: 0.8,
+      roughness: 0.2,
+    });
+    const wing1 = new THREE.Mesh(wingGeo, wingMat);
+    wing1.position.x = 2.0;
+    const wing2 = new THREE.Mesh(wingGeo, wingMat);
+    wing2.position.x = -2.0;
+    satGroup.add(wing1, wing2);
+    satGroup.position.set(28, 12, -10);
+    scene.add(satGroup);
+
+    // 13. Warp Hyperspace Light Streaks (Phase 7)
+    const warpCount = 1400;
+    const warpGeo = new THREE.BufferGeometry();
+    const warpPos = new Float32Array(warpCount * 3);
+    for (let i = 0; i < warpCount; i++) {
+      warpPos[i * 3] = (Math.random() - 0.5) * 90;
+      warpPos[i * 3 + 1] = (Math.random() - 0.5) * 90;
+      warpPos[i * 3 + 2] = (Math.random() - 0.5) * 320;
+    }
+    warpGeo.setAttribute('position', new THREE.BufferAttribute(warpPos, 3));
+    const warpMat = new THREE.PointsMaterial({
+      color: 0x00ffff,
+      size: 2.2,
+      transparent: true,
+      opacity: 0.0,
+    });
+    const warpStars = new THREE.Points(warpGeo, warpMat);
+    scene.add(warpStars);
+
+    // Resize Handler
     const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      if (!container || !camera || !renderer) return;
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
     };
     window.addEventListener('resize', handleResize);
 
-    // Generate stars
-    const starCount = 200;
-    const stars = Array.from({ length: starCount }, () => ({
-      x: (Math.random() - 0.5) * width * 2,
-      y: (Math.random() - 0.5) * height * 2,
-      z: Math.random() * width,
-      size: Math.random() * 2 + 0.5,
-      color: Math.random() > 0.8 ? '#38bdf8' : Math.random() > 0.6 ? '#c084fc' : '#ffffff',
-    }));
-
-    let warpSpeed = 1;
+    // 14. 60 FPS Render Loop
+    let animId: number;
+    const clock = new THREE.Clock();
 
     const render = () => {
-      if (phase === 'WARP_TRANSITION' || phase === 'LAUNCHING') {
-        warpSpeed = Math.min(warpSpeed + 0.5, 35);
-      } else {
-        warpSpeed = 1;
+      const delta = clock.getDelta();
+      animTimeRef.current += delta;
+      const t = animTimeRef.current;
+      const sceneT = t - phaseStartTimeRef.current;
+      const p = phaseRef.current;
+
+      // Rotate Earth & celestial bodies
+      if (earthMesh) earthMesh.rotation.y += delta * 0.04;
+      if (moonMesh && !isDragging) moonMesh.rotation.y += delta * 0.03;
+      if (ringedPlanet) ringedPlanet.rotation.y += delta * 0.05;
+
+      // Orbit Satellite
+      if (satGroup) {
+        const satAngle = t * 0.35;
+        satGroup.position.x = Math.cos(satAngle) * 36;
+        satGroup.position.z = Math.sin(satAngle) * 28;
+        satGroup.position.y = Math.sin(satAngle * 1.5) * 6 + 6;
+        satGroup.rotation.y = -satAngle;
       }
 
-      ctx.fillStyle = '#030712';
-      ctx.fillRect(0, 0, width, height);
+      // Thruster Flicker
+      if (plumeMesh) {
+        const flicker = 0.9 + Math.sin(t * 35) * 0.15;
+        plumeMesh.scale.set(flicker, flicker * 1.2, flicker);
+      }
 
-      const cx = width / 2;
-      const cy = height / 2;
+      // ----------------------------------------------------
+      // PHASE CAMERA & SPACECRAFT ORCHESTRATION
+      // ----------------------------------------------------
+      if (p === 'INITIAL') {
+        const progress = Math.min(sceneT / 3.0, 1.0);
+        camera.position.set(0, 16 - progress * 2, 65 - progress * 10);
+        camera.lookAt(0, 2, 0);
 
-      stars.forEach((star) => {
-        star.z -= warpSpeed;
-        if (star.z <= 0) {
-          star.z = width;
-          star.x = (Math.random() - 0.5) * width * 2;
-          star.y = (Math.random() - 0.5) * height * 2;
+        if (rocketGroup) {
+          rocketGroup.position.set(0, 3.5 + Math.sin(t * 2) * 0.4, 18);
+          rocketGroup.rotation.set(0, 0, Math.sin(t * 1.5) * 0.03);
+        }
+        if (orbitalRing) (orbitalRing.material as THREE.LineBasicMaterial).opacity = 0.2;
+        if (warpStars) (warpStars.material as THREE.PointsMaterial).opacity = 0;
+      } else if (p === 'ORBITING') {
+        const orbitAngle = sceneT * 1.3;
+        const orbitRadiusX = 26;
+        const orbitRadiusZ = 18;
+
+        if (rocketGroup) {
+          rocketGroup.position.x = Math.sin(orbitAngle) * orbitRadiusX;
+          rocketGroup.position.z = Math.cos(orbitAngle) * orbitRadiusZ;
+          rocketGroup.position.y = Math.sin(orbitAngle * 0.8) * 4 + 2;
+          rocketGroup.rotation.y = orbitAngle + Math.PI / 2;
+          rocketGroup.rotation.z = -0.3; // Banking
         }
 
-        const k = 250 / star.z;
-        const px = star.x * k + cx;
-        const py = star.y * k + cy;
+        camera.position.x = Math.sin(orbitAngle - 0.4) * 38;
+        camera.position.z = Math.cos(orbitAngle - 0.4) * 34;
+        camera.position.y = 12;
+        camera.lookAt(
+          rocketGroup?.position.x || 0,
+          rocketGroup?.position.y || 0,
+          rocketGroup?.position.z || 0
+        );
 
-        if (px >= 0 && px < width && py >= 0 && py < height) {
-          const depthAlpha = Math.min(1, Math.max(0.2, 1 - star.z / width));
-          ctx.beginPath();
-          if (warpSpeed > 5) {
-            // Draw warp light streak
-            const prevK = 250 / (star.z + warpSpeed * 3);
-            const prevPx = star.x * prevK + cx;
-            const prevPy = star.y * prevK + cy;
-            ctx.moveTo(prevPx, prevPy);
-            ctx.lineTo(px, py);
-            ctx.strokeStyle = star.color;
-            ctx.lineWidth = star.size * 1.5;
-            ctx.stroke();
-          } else {
-            ctx.arc(px, py, star.size * depthAlpha, 0, Math.PI * 2);
-            ctx.fillStyle = star.color;
-            ctx.globalAlpha = depthAlpha;
-            ctx.fill();
-            ctx.globalAlpha = 1.0;
+        if (orbitalRing) (orbitalRing.material as THREE.LineBasicMaterial).opacity = 0.7;
+      } else if (p === 'FORM_ACTIVE' || p === 'AUTHENTICATING') {
+        camera.position.set(0, 6, 42);
+        camera.lookAt(0, 0, 0);
+
+        if (rocketGroup) {
+          const bgAngle = t * 0.3;
+          rocketGroup.position.set(Math.cos(bgAngle) * 30, 8 + Math.sin(bgAngle) * 3, -15);
+          rocketGroup.rotation.set(0.2, -bgAngle, 0.2);
+        }
+      } else if (p === 'LAUNCHING') {
+        const launchProgress = Math.min(sceneT / 2.0, 1.0);
+        const easeLaunch = launchProgress * launchProgress * 120;
+
+        if (rocketGroup) {
+          rocketGroup.position.set(
+            easeLaunch * 0.3,
+            easeLaunch * 0.8 - 4,
+            18 - easeLaunch * 0.6
+          );
+          rocketGroup.rotation.set(-0.6, 0.4, -0.4);
+
+          if (plumeMesh) {
+            plumeMesh.scale.set(2.5, 4.0, 2.5);
+            (plumeMesh.material as THREE.MeshBasicMaterial).color.setHex(0xfb923c);
           }
         }
-      });
 
+        camera.position.set(
+          (rocketGroup?.position.x || 0) * 0.5,
+          (rocketGroup?.position.y || 0) * 0.4 + 4,
+          (rocketGroup?.position.z || 0) + 30
+        );
+        camera.lookAt(
+          rocketGroup?.position.x || 0,
+          rocketGroup?.position.y || 0,
+          rocketGroup?.position.z || 0
+        );
+      } else if (p === 'WARP_TRANSITION') {
+        const warpProgress = Math.min(sceneT / 2.5, 1.0);
+        camera.position.set(0, 0, 20);
+        camera.lookAt(0, 0, -100);
+
+        if (warpStars) {
+          const wMat = warpStars.material as THREE.PointsMaterial;
+          wMat.opacity = warpProgress < 0.8 ? 0.95 : (1.0 - warpProgress) * 4;
+
+          const positions = warpStars.geometry.attributes.position.array as Float32Array;
+          for (let i = 0; i < warpCount; i++) {
+            positions[i * 3 + 2] += delta * 480;
+            if (positions[i * 3 + 2] > 50) {
+              positions[i * 3 + 2] = -270;
+            }
+          }
+          warpStars.geometry.attributes.position.needsUpdate = true;
+        }
+
+        if (rocketGroup) rocketGroup.position.set(0, -999, 0);
+      }
+
+      renderer.render(scene, camera);
       animId = requestAnimationFrame(render);
     };
 
@@ -148,16 +571,23 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      container.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
       cancelAnimationFrame(animId);
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
     };
-  }, [phase]);
+  }, []);
 
   // Handle Step 1 -> 2 & 3: Click "ENTER ->"
   const handleEnterClick = () => {
     setPhase('ORBITING');
     setTimeout(() => {
       setPhase('FORM_ACTIVE');
-    }, 1800);
+    }, 2200);
   };
 
   // Handle Step 4 -> 5 -> 6 -> 7 -> 8: Submit Form
@@ -165,19 +595,15 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
     e.preventDefault();
     if (!isFormValid) return;
 
-    // Phase 5: Authenticating
     setPhase('AUTHENTICATING');
 
     setTimeout(() => {
-      // Phase 6: Rocket Launch
       setPhase('LAUNCHING');
 
       setTimeout(() => {
-        // Phase 7: Warp Speed Transition
         setPhase('WARP_TRANSITION');
 
         setTimeout(() => {
-          // Phase 8: Main Dashboard
           const user: AuthUserData = {
             name: name.trim(),
             email: email.trim().toLowerCase(),
@@ -187,7 +613,7 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
           };
           onLoginSuccess(user);
         }, 2600);
-      }, 1600);
+      }, 1800);
     }, 1800);
   };
 
@@ -197,162 +623,39 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#030712] font-sans select-none">
-      {/* Background Starfield Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+      {/* 1. Full-Screen Hyper-Realistic Three.js 3D WebGL Canvas */}
+      <div ref={threeContainerRef} className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing" />
 
-      {/* Realistic Distant Moon / Celestial Body */}
-      <div className="absolute top-12 left-12 w-28 h-28 rounded-full bg-gradient-to-tr from-slate-900 via-slate-700 to-slate-400 opacity-70 shadow-2xl shadow-cyan-950/40 pointer-events-none animate-pulse-slow">
-        <div className="absolute inset-0 rounded-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-cyan-300/20 via-transparent to-black/80" />
-        {/* Procedural Moon Craters */}
-        <div className="absolute top-5 left-6 w-5 h-4 rounded-full bg-slate-800/80 border border-slate-600/40 shadow-inner" />
-        <div className="absolute bottom-6 right-7 w-7 h-5 rounded-full bg-slate-800/70 border border-slate-600/40 shadow-inner" />
-        <div className="absolute top-12 right-4 w-3 h-3 rounded-full bg-slate-800/60" />
-      </div>
-
-      {/* Orbiting Satellite */}
-      <div className="absolute top-20 right-20 pointer-events-none animate-float-satellite z-10">
-        <div className="relative flex items-center space-x-1.5 opacity-90 scale-90">
-          {/* Solar panels left */}
-          <div className="w-8 h-4 bg-gradient-to-r from-blue-700 to-cyan-500 rounded border border-cyan-400/60 shadow-lg shadow-cyan-500/40 grid grid-cols-2 gap-0.5 p-0.5">
-            <div className="bg-black/30 rounded-xs" />
-            <div className="bg-black/30 rounded-xs" />
-          </div>
-          {/* Satellite core */}
-          <div className="w-5 h-5 bg-gradient-to-tr from-slate-600 via-slate-300 to-white rounded-xs shadow-md border border-white/60 flex items-center justify-center">
-            <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
-          </div>
-          {/* Solar panels right */}
-          <div className="w-8 h-4 bg-gradient-to-r from-cyan-500 to-blue-700 rounded border border-cyan-400/60 shadow-lg shadow-cyan-500/40 grid grid-cols-2 gap-0.5 p-0.5">
-            <div className="bg-black/30 rounded-xs" />
-            <div className="bg-black/30 rounded-xs" />
-          </div>
-        </div>
-      </div>
-
-      {/* Realistic Curved Earth at Bottom with Atmosphere and City Lights */}
-      <div className="absolute -bottom-[38vw] sm:-bottom-[30vw] md:-bottom-[26vw] left-1/2 -translate-x-1/2 w-[160vw] md:w-[130vw] aspect-square rounded-full pointer-events-none z-0 overflow-hidden shadow-[0_-25px_80px_rgba(56,189,248,0.35)]">
-        {/* Earth sphere base */}
-        <div className="w-full h-full bg-gradient-to-b from-[#0e3b68] via-[#08203e] to-[#020b18] relative">
-          {/* Atmospheric Blue Glow */}
-          <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-cyan-400/60 via-blue-500/30 to-transparent blur-md" />
-          {/* Continental landmass textures & city lights */}
-          <div className="absolute top-12 left-1/4 w-3/5 h-48 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-300/40 via-cyan-600/20 to-transparent blur-sm animate-pulse-slow" />
-          <div className="absolute top-16 left-1/3 w-1/3 h-32 bg-amber-400/20 blur-md" />
-          {/* Subtle cloud swirls */}
-          <div className="absolute top-6 left-1/6 w-2/3 h-24 bg-white/15 rounded-full blur-xl transform -rotate-6" />
-        </div>
-      </div>
-
-      {/* ========================================================= */}
-      {/* 2. ORBITAL PATH VISUALIZER (When ENTER is clicked) */}
-      {/* ========================================================= */}
-      {(phase === 'ORBITING' || phase === 'FORM_ACTIVE' || phase === 'AUTHENTICATING') && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div className="w-[420px] sm:w-[540px] md:w-[680px] h-[220px] sm:h-[280px] md:h-[340px] rounded-[50%] border-2 border-dashed border-cyan-400/30 shadow-[0_0_30px_rgba(56,189,248,0.25)] animate-spin-orbital-slow transform -rotate-12" />
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* ROCKET COMPONENT (With 6 Dynamic Flight Behaviors) */}
-      {/* ========================================================= */}
-      <div
-        className={`absolute z-30 transition-all duration-1000 ${
-          phase === 'INITIAL'
-            ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-28 scale-100 animate-float-rocket'
-            : phase === 'ORBITING'
-            ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 scale-75 animate-rocket-orbit'
-            : phase === 'FORM_ACTIVE' || phase === 'AUTHENTICATING'
-            ? 'top-16 right-1/4 md:right-1/3 scale-50 rotate-45 animate-float-gentle'
-            : phase === 'LAUNCHING'
-            ? 'top-1/2 left-1/2 -translate-x-1/2 scale-125 -rotate-12 animate-rocket-launch'
-            : 'opacity-0 scale-0 pointer-events-none'
-        }`}
-      >
-        <div className="relative flex flex-col items-center">
-          {/* Reference-Accurate Red-and-White Rocket */}
-          <div className="relative w-16 h-32 sm:w-20 sm:h-40 drop-shadow-[0_0_25px_rgba(56,189,248,0.5)]">
-            <svg
-              viewBox="0 0 100 220"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-full h-full"
-            >
-              {/* Nose Cone */}
-              <path
-                d="M50 0C40 25 32 55 32 80H68C68 55 60 25 50 0Z"
-                fill="#EF4444"
-              />
-              <path
-                d="M50 0C45 25 40 55 40 80H50V0Z"
-                fill="#DC2626"
-                opacity="0.6"
-              />
-              {/* Rocket Body */}
-              <rect x="32" y="80" width="36" height="85" fill="#F8FAFC" rx="2" />
-              <rect x="48" y="80" width="20" height="85" fill="#E2E8F0" />
-              {/* Cockpit Window */}
-              <circle cx="50" cy="105" r="10" fill="#38BDF8" stroke="#0284C7" strokeWidth="2.5" />
-              <circle cx="48" cy="102" r="3" fill="#FFFFFF" opacity="0.8" />
-              {/* Aerospace stripe */}
-              <rect x="32" y="130" width="36" height="6" fill="#EF4444" />
-              {/* Left Wing / Booster */}
-              <path
-                d="M32 125C22 135 12 165 10 185C18 185 28 175 32 160V125Z"
-                fill="#DC2626"
-              />
-              {/* Right Wing / Booster */}
-              <path
-                d="M68 125C78 135 88 165 90 185C82 185 72 175 68 160V125Z"
-                fill="#EF4444"
-              />
-              {/* Center Engine Nozzle */}
-              <path d="M38 165L42 180H58L62 165H38Z" fill="#475569" />
-            </svg>
-          </div>
-
-          {/* Dynamic Thruster Fire & Exhaust Particles */}
-          <div className="relative flex flex-col items-center -mt-2">
-            <div
-              className={`w-4 rounded-full bg-gradient-to-b from-amber-200 via-orange-500 to-transparent blur-[1px] animate-thruster ${
-                phase === 'LAUNCHING' ? 'h-36 w-8 from-cyan-200 via-orange-500 to-red-600' : 'h-14'
-              }`}
-            />
-            <div
-              className={`w-8 h-8 rounded-full bg-orange-500/40 blur-md -mt-10 ${
-                phase === 'LAUNCHING' ? 'scale-250 bg-cyan-400/80' : 'scale-100'
-              }`}
-            />
-          </div>
-        </div>
+      {/* Interactive Drag Hint */}
+      <div className="absolute top-4 left-6 z-20 pointer-events-none hidden sm:flex items-center space-x-2 text-[10px] font-mono text-cyan-400/70 bg-[#040713]/60 px-3 py-1.5 rounded-full border border-cyan-500/20 backdrop-blur-sm">
+        <Sparkles className="w-3 h-3 text-cyan-400" />
+        <span>3D Space Canvas: Click & Drag to Rotate Moon and Celestial Bodies</span>
       </div>
 
       {/* ========================================================= */}
       {/* 1. INITIAL PHASE: "ENTER ->" GLOWING CLOUD BUTTON */}
       {/* ========================================================= */}
       {phase === 'INITIAL' && (
-        <div className="relative z-20 flex flex-col items-center mt-44 sm:mt-52 animate-fade-in">
-          {/* Cloud-shaped Glow Pill Button */}
+        <div className="relative z-20 flex flex-col items-center mt-52 sm:mt-64 animate-fade-in pointer-events-auto">
           <div className="relative group">
-            {/* Cloud glow aura */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/50 via-blue-500/40 to-cyan-400/50 rounded-full blur-xl group-hover:blur-2xl transition-all opacity-80 group-hover:opacity-100 animate-pulse-slow" />
+            {/* Luminous Cloud Glow Aura */}
+            <div className="absolute -inset-4 bg-gradient-to-r from-cyan-400/60 via-blue-500/50 to-cyan-400/60 rounded-full blur-xl group-hover:blur-2xl transition-all opacity-80 group-hover:opacity-100 animate-pulse-slow" />
 
             <button
               onClick={handleEnterClick}
-              className="relative flex items-center space-x-3 px-10 py-4.5 rounded-full bg-gradient-to-b from-cyan-400 via-cyan-500 to-blue-600 text-white font-mono font-bold text-base sm:text-lg tracking-wider border-2 border-white/60 shadow-[0_0_35px_rgba(56,189,248,0.8)] hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+              className="relative flex items-center space-x-3 px-11 py-4.5 rounded-full bg-gradient-to-b from-cyan-400 via-cyan-500 to-blue-600 text-white font-mono font-black text-lg tracking-wider border-2 border-white/80 shadow-[0_0_40px_rgba(56,189,248,0.9)] hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <span>ENTER</span>
-              <ArrowRight className="w-5 h-5 text-white group-hover:translate-x-1.5 transition-transform" />
+              <ArrowRight className="w-6 h-6 text-white group-hover:translate-x-1.5 transition-transform" />
             </button>
           </div>
 
-          {/* Subtitle / Brand identity */}
-          <div className="mt-8 flex items-center space-x-2 text-cyan-300/80 font-mono text-xs tracking-widest uppercase">
+          <div className="mt-6 flex items-center space-x-2 text-cyan-300 font-mono text-xs tracking-widest uppercase">
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>LunaRov SpaceHub Gateway</span>
+            <span>LunaRov Space Gateway</span>
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           </div>
 
-          {/* Quick guest bypass button */}
           {onSkip && (
             <button
               onClick={onSkip}
@@ -365,42 +668,39 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* 3, 4, 5. CLOUD-SHAPED LOGIN FORM (With Validation & Auth) */}
+      {/* 3, 4, 5. 3D CLOUD-SHAPED LOGIN FORM (With Validation) */}
       {/* ========================================================= */}
       {(phase === 'FORM_ACTIVE' || phase === 'AUTHENTICATING') && (
-        <div className="relative z-40 w-full max-w-md px-4 animate-cloud-rise">
-          {/* Outer Cloud Container Styling */}
-          <div className="relative p-8 sm:p-10 rounded-[40px] bg-gradient-to-b from-white/95 via-white/90 to-cyan-50/95 text-slate-900 shadow-[0_0_60px_rgba(56,189,248,0.7),_0_20px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl border-4 border-white/80">
-            {/* Cloud Puffs (Decorative 3D spheres around perimeter) */}
-            <div className="absolute -top-6 -left-6 w-20 h-20 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
-            <div className="absolute -top-8 left-1/3 w-28 h-28 bg-white/95 rounded-full blur-[1px] -z-10 shadow-lg" />
-            <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
-            <div className="absolute -bottom-6 -left-4 w-20 h-20 bg-cyan-50/90 rounded-full blur-[1px] -z-10 shadow-lg" />
-            <div className="absolute -bottom-8 right-1/4 w-28 h-28 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
+        <div className="relative z-40 w-full max-w-md px-4 animate-cloud-rise pointer-events-auto">
+          <div className="relative p-8 sm:p-10 rounded-[42px] bg-gradient-to-b from-white/95 via-white/90 to-cyan-50/95 text-slate-900 shadow-[0_0_70px_rgba(56,189,248,0.8),_0_25px_50px_rgba(0,0,0,0.5)] backdrop-blur-2xl border-4 border-white">
+            {/* 3D Volumetric Cloud Spheres */}
+            <div className="absolute -top-7 -left-7 w-22 h-22 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
+            <div className="absolute -top-9 left-1/3 w-32 h-32 bg-white/95 rounded-full blur-[1px] -z-10 shadow-lg" />
+            <div className="absolute -top-7 -right-7 w-26 h-26 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
+            <div className="absolute -bottom-7 -left-5 w-22 h-22 bg-cyan-50/90 rounded-full blur-[1px] -z-10 shadow-lg" />
+            <div className="absolute -bottom-9 right-1/4 w-32 h-32 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
 
-            {/* Cloud Header */}
             {phase === 'FORM_ACTIVE' && (
               <div className="text-center mb-6">
-                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center justify-center gap-2">
-                  <span>Welcome Back</span>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  Welcome Back
                 </h2>
-                <p className="text-xs sm:text-sm font-medium text-cyan-700/80 mt-1 font-mono">
+                <p className="text-xs sm:text-sm font-medium text-cyan-700 font-mono mt-1">
                   Sign in to continue your journey
                 </p>
               </div>
             )}
 
-            {/* Phase 5: Authenticating State inside cloud */}
             {phase === 'AUTHENTICATING' ? (
               <div className="py-10 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in">
-                <div className="relative flex items-center justify-center w-20 h-20">
-                  <div className="absolute inset-0 rounded-full border-4 border-cyan-400/30 animate-ping" />
+                <div className="relative flex items-center justify-center w-22 h-22">
+                  <div className="absolute inset-0 rounded-full border-4 border-dashed border-cyan-500 animate-spin-slow" />
                   <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/50">
                     <CheckCircle2 className="w-9 h-9 text-white animate-bounce-slow" />
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">Authenticating...</h3>
+                  <h3 className="text-xl font-bold text-slate-900 font-mono">Authenticating...</h3>
                   <p className="text-xs text-slate-600 font-mono mt-1">
                     Please wait while we verify your details
                   </p>
@@ -410,7 +710,6 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                 </div>
               </div>
             ) : (
-              /* Phase 3 & 4: Interactive Input Form */
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Field 1: Name */}
                 <div>
@@ -431,7 +730,7 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                         touched.name && !isNameValid
                           ? 'border-red-400 bg-red-50/50'
                           : isNameValid
-                          ? 'border-emerald-500 bg-white'
+                          ? 'border-emerald-500 bg-white shadow-sm'
                           : 'border-cyan-200 focus:border-cyan-500 focus:bg-white'
                       }`}
                     />
@@ -442,11 +741,6 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                       <AlertCircle className="absolute right-3.5 w-4 h-4 text-red-500" />
                     )}
                   </div>
-                  {touched.name && !isNameValid && (
-                    <p className="text-[10px] text-red-500 font-mono mt-1 ml-3">
-                      Please enter at least 2 characters.
-                    </p>
-                  )}
                 </div>
 
                 {/* Field 2: Email */}
@@ -468,7 +762,7 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                         touched.email && !isEmailValid
                           ? 'border-red-400 bg-red-50/50'
                           : isEmailValid
-                          ? 'border-emerald-500 bg-white'
+                          ? 'border-emerald-500 bg-white shadow-sm'
                           : 'border-cyan-200 focus:border-cyan-500 focus:bg-white'
                       }`}
                     />
@@ -479,11 +773,6 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                       <AlertCircle className="absolute right-3.5 w-4 h-4 text-red-500" />
                     )}
                   </div>
-                  {touched.email && !isEmailValid && (
-                    <p className="text-[10px] text-red-500 font-mono mt-1 ml-3">
-                      Enter a valid email address.
-                    </p>
-                  )}
                 </div>
 
                 {/* Field 3: Password */}
@@ -505,7 +794,7 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                         touched.password && !isPasswordValid
                           ? 'border-red-400 bg-red-50/50'
                           : isPasswordValid
-                          ? 'border-emerald-500 bg-white'
+                          ? 'border-emerald-500 bg-white shadow-sm'
                           : 'border-cyan-200 focus:border-cyan-500 focus:bg-white'
                       }`}
                     />
@@ -515,24 +804,15 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                       className="absolute right-9 text-slate-400 hover:text-cyan-600 transition-colors"
                       title={showPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                     {isPasswordValid && (
                       <CheckCircle2 className="absolute right-3.5 w-4 h-4 text-emerald-500" />
                     )}
                   </div>
-                  {touched.password && !isPasswordValid && (
-                    <p className="text-[10px] text-red-500 font-mono mt-1 ml-3">
-                      Password must be at least 6 characters.
-                    </p>
-                  )}
                 </div>
 
-                {/* Live Form Validation Feedback Pill */}
+                {/* Validation Feedback Confirmation */}
                 {isFormValid && (
                   <div className="flex items-center justify-center space-x-2 py-1.5 px-3 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-semibold animate-fade-in">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -563,17 +843,17 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
       {/* 7. WARP-SPEED TRANSITION & "WELCOME ABOARD!" OVERLAY */}
       {/* ========================================================= */}
       {phase === 'WARP_TRANSITION' && (
-        <div className="relative z-50 flex flex-col items-center justify-center text-center px-4 animate-zoom-in">
-          {/* Central Blue Planet Hologram */}
-          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-tr from-cyan-600 via-blue-500 to-indigo-400 shadow-[0_0_80px_rgba(56,189,248,0.9)] flex items-center justify-center mb-6 animate-pulse-slow">
-            <Globe className="w-20 h-20 text-white/90 animate-spin-slow" />
-            <div className="absolute inset-0 rounded-full border-2 border-cyan-200/50 animate-ping" />
+        <div className="relative z-50 flex flex-col items-center justify-center text-center px-4 animate-zoom-in pointer-events-none">
+          {/* Holographic Glowing Central Planet */}
+          <div className="relative w-40 h-40 rounded-full bg-gradient-to-tr from-cyan-500 via-blue-500 to-indigo-500 shadow-[0_0_100px_rgba(56,189,248,0.9)] flex items-center justify-center mb-6 animate-pulse-slow">
+            <Globe className="w-24 h-24 text-white animate-spin-slow" />
+            <div className="absolute inset-0 rounded-full border-2 border-cyan-200/60 animate-ping" />
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-black font-mono text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-blue-400 tracking-wider">
+          <h1 className="text-4xl sm:text-6xl font-black font-mono text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-blue-400 tracking-wider">
             Welcome Aboard!
           </h1>
-          <p className="mt-3 text-sm sm:text-base text-cyan-200 font-mono tracking-widest uppercase animate-pulse">
+          <p className="mt-3 text-base sm:text-lg text-cyan-200 font-mono tracking-widest uppercase animate-pulse">
             You are now entering your space journey...
           </p>
 

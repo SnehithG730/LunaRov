@@ -1,6 +1,7 @@
 import { TerrainGrid } from '@/types/terrain';
 import { Point2D, PathfindingResult } from '@/types/pathfinding';
 import { AStarPathfinder } from './AStar';
+import { TrajectoryPlanner } from './TrajectoryPlanner';
 
 export class DynamicReplanner {
   private static astar = new AStarPathfinder();
@@ -45,16 +46,26 @@ export class DynamicReplanner {
       blockedNodes: blockedNodes.length > 0 ? blockedNodes : undefined,
     };
 
-    // 1. Try local reconnection to a downstream waypoint on the original trajectory
-    // Search from index 4 forward to avoid rerouting right into the obstacle
+    // 1. Try local reconnection to a downstream waypoint strictly AFTER the hazard
+    let obstacleIdxInRemaining = -1;
+    if (hazardPos && remainingPath.length > 0) {
+      obstacleIdxInRemaining = remainingPath.findIndex((p) => {
+        return Math.hypot(p.x - hazardPos.x, p.y - hazardPos.y) <= 1.8;
+      });
+    }
+
+    const startSearchIdx = obstacleIdxInRemaining !== -1
+      ? Math.min(obstacleIdxInRemaining + 2, remainingPath.length - 1)
+      : Math.min(4, Math.max(1, remainingPath.length - 1));
+
     let bestDetour: PathfindingResult | null = null;
     let reconnectIndex = -1;
 
-    for (let i = Math.min(5, remainingPath.length - 1); i < remainingPath.length; i++) {
+    for (let i = startSearchIdx; i < remainingPath.length; i++) {
       const waypoint = remainingPath[i];
       const cell = grid.cells[waypoint.y]?.[waypoint.x];
       if (!cell || cell.isObstacle || cell.slope >= 20.0 || cell.roughness >= 1.8) continue;
-      if (hazardPos && waypoint.x === hazardPos.x && waypoint.y === hazardPos.y) continue;
+      if (hazardPos && Math.hypot(waypoint.x - hazardPos.x, waypoint.y - hazardPos.y) <= 1.8) continue;
 
       const localResult = this.astar.findPath(grid, roundedPos, waypoint, pathfindingOptions);
       if (localResult.success && localResult.path.length > 0) {
@@ -71,13 +82,25 @@ export class DynamicReplanner {
         ...remainingPath.slice(reconnectIndex + 1),
       ];
 
+      // Smooth corners into safe curves along with straight segments
+      const curvedPath = TrajectoryPlanner.generateCurvedTrajectory(grid, concatenatedPath);
+
       return {
         ...bestDetour,
-        path: concatenatedPath,
+        path: curvedPath.length >= 2 ? curvedPath : concatenatedPath,
       };
     }
 
     // 3. Fallback: Full global replan from current position to goal with blocked hazard
-    return this.astar.findPath(grid, roundedPos, target, pathfindingOptions);
+    const globalResult = this.astar.findPath(grid, roundedPos, target, pathfindingOptions);
+    if (globalResult.success && globalResult.path.length > 0) {
+      const curvedPath = TrajectoryPlanner.generateCurvedTrajectory(grid, globalResult.path);
+      return {
+        ...globalResult,
+        path: curvedPath.length >= 2 ? curvedPath : globalResult.path,
+      };
+    }
+
+    return globalResult;
   }
 }

@@ -118,32 +118,44 @@ export class RoverSimulationEngine {
     //   Step 2: IDENTIFY obstacle & hazard details
     //   Step 3: CALCULATE a new path safely around the hazard
     //   Step 4: RESUME navigation towards destination
+    let didReplanInThisStep = false;
+
+    // Clear avoidedHazard if the rover has moved sufficiently far from it or passed it
+    if (updatedState.avoidedHazard) {
+      const distToAvoided = Math.hypot(
+        updatedState.x - updatedState.avoidedHazard.x,
+        updatedState.y - updatedState.avoidedHazard.y
+      ) * terrain.resolution;
+      if (distToAvoided > Math.max(4.5, config.sensorRangeMeters * 0.75)) {
+        updatedState.avoidedHazard = undefined;
+      }
+    }
+
     if (isAutonomous && scan.hasHazardAhead && scan.closestHazardDistMeters < config.sensorRangeMeters * 0.85) {
       const lookaheadCount = Math.min(8, updatedPath.length - nextWaypointIdx);
       const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + lookaheadCount);
 
-      // Check if any upcoming waypoint directly intersects a hazard cell
+      // Check if any upcoming waypoint directly intersects an impassable hazard cell
       let blockingCell = upcomingWaypoints
-        .map((p) => terrain.cells[p.y]?.[p.x])
+        .map((p) => terrain.cells[Math.round(p.y)]?.[Math.round(p.x)])
         .find((c) => c && CollisionSystem.classifyHazard(c).isHazard);
 
-      // If no waypoint is strictly on the cell, check if the trajectory corridor passes dangerously close (<= 2.2m)
-      // or if the rover is heading directly towards the hazard within close proximity (<= 6.0m)
+      // If no discrete waypoint is directly on a hazard cell, check if the planned trajectory corridor
+      // intersects dangerously close (<= 1.6m) to a NEW hazard that is NOT already avoided
       if (!blockingCell && scan.hazardCell) {
         const hz = scan.hazardCell;
-        const distFromRoverToHz = Math.hypot(hz.x - updatedState.x, hz.y - updatedState.y) * terrain.resolution;
+        const isAlreadyAvoided = !!(updatedState.avoidedHazard &&
+          Math.hypot(updatedState.avoidedHazard.x - hz.x, updatedState.avoidedHazard.y - hz.y) <= 1.2);
 
-        const isPathTooClose = upcomingWaypoints.some((wp) => {
-          const d = Math.hypot(wp.x - hz.x, wp.y - hz.y) * terrain.resolution;
-          return d <= 2.2;
-        });
+        if (!isAlreadyAvoided) {
+          const isPathTooClose = upcomingWaypoints.some((wp) => {
+            const d = Math.hypot(wp.x - hz.x, wp.y - hz.y) * terrain.resolution;
+            return d <= 1.6;
+          });
 
-        const angleToHz = normalizeAngle(Math.atan2(hz.y - updatedState.y, hz.x - updatedState.x));
-        const headingDiff = Math.abs(angleDifference(angleToHz, updatedState.heading));
-        const isHeadingDirectlyAtHazard = headingDiff <= (35 * Math.PI) / 180 && distFromRoverToHz <= 6.0;
-
-        if (isPathTooClose || isHeadingDirectlyAtHazard) {
-          blockingCell = hz;
+          if (isPathTooClose) {
+            blockingCell = hz;
+          }
         }
       }
 
@@ -152,6 +164,7 @@ export class RoverSimulationEngine {
         updatedState.velocity = 0;
         updatedState.speed = 0;
         currentStatus = 'REROUTING';
+        didReplanInThisStep = true;
 
         // Step 2: IDENTIFY OBSTACLE & HAZARD
         const classification = CollisionSystem.classifyHazard(blockingCell);
@@ -178,10 +191,13 @@ export class RoverSimulationEngine {
           { x: blockingCell.x, y: blockingCell.y }
         );
 
-        // Step 4: RESUME NAVIGATION
+        // Step 4: RESUME NAVIGATION ALONG DETOUR
         if (replanResult.success && replanResult.path.length > 0) {
           updatedPath = replanResult.path;
-          nextWaypointIdx = 0;
+          updatedState.avoidedHazard = { x: blockingCell.x, y: blockingCell.y };
+          // Advance immediately to the forward detour waypoint so rover steers & drives around obstacle
+          const dToP0 = Math.hypot(updatedPath[0].x - updatedState.x, updatedPath[0].y - updatedState.y) * terrain.resolution;
+          nextWaypointIdx = (dToP0 <= 0.8 && updatedPath.length > 1) ? 1 : 0;
           nextRerouteCount += 1;
           currentStatus = 'RUNNING';
 
@@ -236,23 +252,25 @@ export class RoverSimulationEngine {
       }
     } else {
       // AUTONOMOUS MODE
-      if (nextWaypointIdx < updatedPath.length) {
-        const currentTargetWp = updatedPath[nextWaypointIdx];
-        const res = RoverKinematics.updateAutonomous(
-          updatedState,
-          config,
-          currentTargetWp,
-          terrain,
-          dtSeconds
-        );
-        updatedState = res.updatedState;
-        if (res.reachedWaypoint) {
-          nextWaypointIdx += 1;
+      if (!didReplanInThisStep) {
+        if (nextWaypointIdx < updatedPath.length) {
+          const currentTargetWp = updatedPath[nextWaypointIdx];
+          const res = RoverKinematics.updateAutonomous(
+            updatedState,
+            config,
+            currentTargetWp,
+            terrain,
+            dtSeconds
+          );
+          updatedState = res.updatedState;
+          if (res.reachedWaypoint) {
+            nextWaypointIdx += 1;
+          }
+        } else {
+          // Trajectory complete
+          updatedState.goalReached = true;
+          updatedState.velocity = 0;
         }
-      } else {
-        // Trajectory complete
-        updatedState.goalReached = true;
-        updatedState.velocity = 0;
       }
     }
 

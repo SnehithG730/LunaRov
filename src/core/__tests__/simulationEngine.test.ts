@@ -388,4 +388,42 @@ if (glitchClass.type !== 'GLITCHY_TERRAIN') {
 }
 console.log(`  ✓ Glitchy terrain classified: ${glitchClass.desc}`);
 
-console.log('\n>>> ALL 9 ROVER SIMULATION ENGINE TESTS PASSED SUCCESSFULLY! <<<\n');
+// -------------------------------------------------------------
+// TEST 10: Post-Reroute Movement & Continuous Autonomous Traversal
+// (Rover accelerates smoothly along detour without freezing)
+// -------------------------------------------------------------
+console.log('\n[TEST 10] Verifying Rover Movement & Acceleration Along Detour...');
+let postRerouteState = craterReroute.updatedState;
+let postReroutePath = craterReroute.activePath;
+let postRerouteWpIdx = craterReroute.nextWaypointIndex;
+const postVelocities: number[] = [];
+
+for (let step = 0; step < 10; step++) {
+  const stepRes = RoverSimulationEngine.step({
+    state: postRerouteState,
+    config: DEFAULT_ROVER_CONFIG,
+    terrain: multiHazardTerrain,
+    activePath: postReroutePath,
+    currentWaypointIndex: postRerouteWpIdx,
+    targetPoint: { x: 8, y: 5 },
+    dtSeconds: 0.1,
+    rerouteCount: craterReroute.rerouteCount,
+    isAutonomous: true,
+  });
+
+  postRerouteState = stepRes.updatedState;
+  postReroutePath = stepRes.activePath;
+  postRerouteWpIdx = stepRes.nextWaypointIndex;
+  postVelocities.push(stepRes.updatedState.velocity);
+  console.log(`  [TEST 10 Step ${step}] v=${stepRes.updatedState.velocity.toFixed(3)}, pos=(${stepRes.updatedState.x.toFixed(2)}, ${stepRes.updatedState.y.toFixed(2)}), wpIdx=${stepRes.nextWaypointIndex}, events=${stepRes.newEvents.map(e => e.message).join(' | ')}`);
+}
+
+const finalPostVelocity = postVelocities[postVelocities.length - 1];
+if (finalPostVelocity <= 0.2) {
+  throw new Error(`Rover failed to move along detour! Final velocity: ${finalPostVelocity}m/s`);
+}
+
+console.log(`  ✓ Rover accelerated along detour: step 1: ${postVelocities[0].toFixed(3)}m/s -> step 10: ${finalPostVelocity.toFixed(3)}m/s`);
+console.log(`  ✓ Traversed position: (${postRerouteState.x.toFixed(2)}, ${postRerouteState.y.toFixed(2)}), waypoint index: ${postRerouteWpIdx}`);
+
+console.log('\n>>> ALL 10 ROVER SIMULATION ENGINE TESTS PASSED SUCCESSFULLY! <<<\n');

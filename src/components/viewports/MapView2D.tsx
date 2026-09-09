@@ -129,32 +129,65 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       ctx.setLineDash([]); // Reset dash
     }
 
-    // 5. Draw Planned Path (Bright Technical Line)
+    // 5. Draw Planned Path (Curved-and-Straight Aerospace Trajectory)
     if (activePath.length > 1) {
-      ctx.strokeStyle = TERRAIN_PALETTES.PATH_PLANNED;
-      ctx.lineWidth = 2.8;
-      ctx.shadowColor = '#00f0ff';
-      ctx.shadowBlur = 8;
+      // 5a. Traversal line: smooth curve interpolation along active path
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 3.2;
+      ctx.shadowColor = 'rgba(0, 240, 255, 0.75)';
+      ctx.shadowBlur = 10;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       ctx.beginPath();
-      for (let i = 0; i < activePath.length; i++) {
-        const pt = activePath[i];
-        const px = (pt.x + 0.5) * cellW;
-        const py = (pt.y + 0.5) * cellH;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+      const p0 = activePath[0];
+      ctx.moveTo((p0.x + 0.5) * cellW, (p0.y + 0.5) * cellH);
+
+      for (let i = 1; i < activePath.length - 1; i++) {
+        const pCurr = activePath[i];
+        const pNext = activePath[i + 1];
+        const currX = (pCurr.x + 0.5) * cellW;
+        const currY = (pCurr.y + 0.5) * cellH;
+        const nextX = (pNext.x + 0.5) * cellW;
+        const nextY = (pNext.y + 0.5) * cellH;
+        const midX = (currX + nextX) / 2;
+        const midY = (currY + nextY) / 2;
+        ctx.quadraticCurveTo(currX, currY, midX, midY);
       }
+
+      const pLast = activePath[activePath.length - 1];
+      ctx.lineTo((pLast.x + 0.5) * cellW, (pLast.y + 0.5) * cellH);
       ctx.stroke();
       ctx.shadowBlur = 0; // reset
 
-      // Waypoint small dots
+      // 5b. Animated Flowing Directional Pulse Dash
+      const dashOffset = (Date.now() * 0.02) % 16;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 12]);
+      ctx.lineDashOffset = -dashOffset;
+
+      ctx.beginPath();
+      ctx.moveTo((p0.x + 0.5) * cellW, (p0.y + 0.5) * cellH);
+      for (let i = 1; i < activePath.length - 1; i++) {
+        const pCurr = activePath[i];
+        const pNext = activePath[i + 1];
+        const midX = ((pCurr.x + pNext.x) * 0.5 + 0.5) * cellW;
+        const midY = ((pCurr.y + pNext.y) * 0.5 + 0.5) * cellH;
+        ctx.quadraticCurveTo((pCurr.x + 0.5) * cellW, (pCurr.y + 0.5) * cellH, midX, midY);
+      }
+      ctx.lineTo((pLast.x + 0.5) * cellW, (pLast.y + 0.5) * cellH);
+      ctx.stroke();
+      ctx.restore();
+
+      // 5c. Safe Waypoint Guidance Markers
       ctx.fillStyle = '#00f0ff';
-      for (let i = currentWaypointIndex; i < activePath.length; i += 3) {
+      const step = Math.max(1, Math.floor(activePath.length / 25));
+      for (let i = currentWaypointIndex; i < activePath.length; i += step) {
         const pt = activePath[i];
         ctx.beginPath();
-        ctx.arc((pt.x + 0.5) * cellW, (pt.y + 0.5) * cellH, 2.0, 0, 2 * Math.PI);
+        ctx.arc((pt.x + 0.5) * cellW, (pt.y + 0.5) * cellH, 2.2, 0, 2 * Math.PI);
         ctx.fill();
       }
     }

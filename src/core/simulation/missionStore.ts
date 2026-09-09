@@ -9,6 +9,7 @@ import { DijkstraPathfinder } from '@/core/pathfinding/Dijkstra';
 import { GreedyBFSPathfinder } from '@/core/pathfinding/GreedyBFS';
 import { RoverSimulationEngine } from '@/core/rover/RoverSimulationEngine';
 import { SensorScanResult } from '@/core/simulation/CollisionSystem';
+import { TrajectoryPlanner } from '@/core/pathfinding/TrajectoryPlanner';
 import { DEFAULT_ROVER_CONFIG, DEFAULT_GRID_SIZE } from '@/lib/constants';
 import { saveMissionToStorage } from '@/lib/storage';
 
@@ -317,9 +318,15 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     }
 
     if (result.success) {
+      const curvedPath = TrajectoryPlanner.generateCurvedTrajectory(terrain, result.path);
+      const finalPath = curvedPath.length >= 2 ? curvedPath : result.path;
+
       set({
-        pathResult: result,
-        activePath: result.path,
+        pathResult: {
+          ...result,
+          path: finalPath,
+        },
+        activePath: finalPath,
         currentWaypointIndex: 0,
         simulationStatus: 'READY',
       });
@@ -552,6 +559,12 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       simulationStatus: stepResult.simulationStatus,
       activePath: stepResult.activePath,
       currentWaypointIndex: stepResult.nextWaypointIndex,
+      pathResult: s.pathResult
+        ? {
+            ...s.pathResult,
+            path: stepResult.activePath,
+          }
+        : null,
       sensorScan: stepResult.sensorScan,
       rerouteCount: stepResult.rerouteCount,
       telemetryHistory: [...s.telemetryHistory, stepResult.telemetry].slice(-300),

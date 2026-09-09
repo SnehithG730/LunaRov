@@ -39,6 +39,7 @@ export interface RoverState {
   goalReached: boolean;       // Target destination achieved
   mode: 'AUTONOMOUS' | 'MANUAL';
   activeAlert?: string;       // Active mission alert string if any
+  avoidedHazard?: Point2D;    // Hazard cell currently being detoured around
 }
 
 export interface TelemetryPoint {

@@ -997,7 +997,9 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       activePath.forEach((pt) => {
         const px = pt.x * resolution - halfW;
         const pz = pt.y * resolution - halfH;
-        const py = (cells[pt.y]?.[pt.x]?.elevation ?? 0) + 0.35;
+        const gx = Math.max(0, Math.min(width - 1, Math.round(pt.x)));
+        const gy = Math.max(0, Math.min(height - 1, Math.round(pt.y)));
+        const py = (cells[gy]?.[gx]?.elevation ?? 0) + 0.35;
         points.push(new THREE.Vector3(px, py, pz));
       });
 

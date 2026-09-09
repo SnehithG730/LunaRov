@@ -21,6 +21,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
   const currentWaypointIndex = useMissionStore((s) => s.currentWaypointIndex);
   const editorBrush = useMissionStore((s) => s.editorBrush);
   const sensorScan = useMissionStore((s) => s.sensorScan);
+  const simulationStatus = useMissionStore((s) => s.simulationStatus);
   const setStartPoint = useMissionStore((s) => s.setStartPoint);
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
   const applyBrushAt = useMissionStore((s) => s.applyBrushAt);
@@ -181,6 +182,71 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.restore();
+
+    // 6b. Active Hazard Detection & Tracking Reticle
+    if (sensorScan?.hasHazardAhead && sensorScan.hazardCell) {
+      const hzCell = sensorScan.hazardCell;
+      const hzPx = (hzCell.x + 0.5) * cellW;
+      const hzPy = (hzCell.y + 0.5) * cellH;
+
+      const isCrater = sensorScan.hazardType === 'SUPER_INCLINED_CRATER' || sensorScan.hazardType === 'CRATER_RIM';
+      const isSlope = sensorScan.hazardType === 'STEEP_SLOPE';
+      const isGlitch = sensorScan.hazardType === 'GLITCHY_TERRAIN';
+      const color = isCrater ? '#f43f5e' : isSlope ? '#f59e0b' : isGlitch ? '#a855f7' : '#ef4444';
+
+      ctx.save();
+      // Laser tracking dashed line from rover to hazard
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(roverPx, roverPy);
+      ctx.lineTo(hzPx, hzPy);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Hazard reticle circle & crosshairs
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hzPx, hzPy, cellW * 0.75, 0, 2 * Math.PI);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(hzPx - cellW * 0.9, hzPy);
+      ctx.lineTo(hzPx + cellW * 0.9, hzPy);
+      ctx.moveTo(hzPx, hzPy - cellH * 0.9);
+      ctx.lineTo(hzPx, hzPy + cellH * 0.9);
+      ctx.stroke();
+
+      // Hazard classification pill badge
+      const label = `⚠️ ${sensorScan.hazardType?.replace(/_/g, ' ') || 'HAZARD'} (${sensorScan.closestHazardDistMeters}m)`;
+      ctx.font = 'bold 9.5px monospace';
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(8, 13, 26, 0.92)';
+      ctx.fillRect(hzPx - textWidth / 2 - 5, hzPy - cellH * 1.3 - 11, textWidth + 10, 15);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(hzPx - textWidth / 2 - 5, hzPy - cellH * 1.3 - 11, textWidth + 10, 15);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, hzPx, hzPy - cellH * 1.3);
+      ctx.restore();
+    }
+
+    // 6c. AI Autonomous Rerouting Status Banner
+    if (simulationStatus === 'REROUTING') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.95)';
+      ctx.font = 'bold 10.5px monospace';
+      const bannerText = '⚡ AI PATH REALIGNMENT ENGAGED: CALCULATING DETOUR...';
+      const bWidth = ctx.measureText(bannerText).width;
+      ctx.fillRect(width / 2 - bWidth / 2 - 8, 8, bWidth + 16, 20);
+      ctx.fillStyle = '#040711';
+      ctx.textAlign = 'center';
+      ctx.fillText(bannerText, width / 2, 22);
+      ctx.restore();
+    }
 
     // 7. Draw Start Coordinate Beacon (Green)
     const startPx = (startPoint.x + 0.5) * cellW;

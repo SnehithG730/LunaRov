@@ -183,6 +183,8 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
   const applyBrushAt = useMissionStore((s) => s.applyBrushAt);
   const setEditorBrush = useMissionStore((s) => s.setEditorBrush);
+  const sensorScan = useMissionStore((s) => s.sensorScan);
+  const simulationStatus = useMissionStore((s) => s.simulationStatus);
 
   // Local interaction state
   const [interactionMode, setInteractionMode] = useState<MapInteractionMode>(initialMode);
@@ -1042,6 +1044,109 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     }
   }, [activePath, telemetryHistory, terrain]);
 
+  // --- Dynamic Autonomous Hazard Detection & Avoidance 3D Holographic Overlay ---
+  useEffect(() => {
+    const hazardGroup = hazardMarkersGroupRef.current;
+    if (!hazardGroup) return;
+
+    // Clear previous dynamic hazard markers
+    while (hazardGroup.children.length > 0) {
+      const obj = hazardGroup.children[0] as THREE.Mesh;
+      hazardGroup.remove(obj);
+      if (obj.geometry) obj.geometry.dispose();
+      if (Array.isArray(obj.material)) {
+        obj.material.forEach((m) => m.dispose());
+      } else if (obj.material) {
+        obj.material.dispose();
+      }
+    }
+
+    if (!sensorScan?.hasHazardAhead || !sensorScan.hazardCell) return;
+
+    const { resolution, width, height } = terrain;
+    const halfW = (width * resolution) / 2;
+    const halfH = (height * resolution) / 2;
+    const hzCell = sensorScan.hazardCell;
+    const hx = hzCell.x * resolution - halfW;
+    const hz = hzCell.y * resolution - halfH;
+    const hy = hzCell.elevation;
+
+    const isCrater = sensorScan.hazardType === 'SUPER_INCLINED_CRATER' || sensorScan.hazardType === 'CRATER_RIM';
+    const isSlope = sensorScan.hazardType === 'STEEP_SLOPE';
+    const isGlitch = sensorScan.hazardType === 'GLITCHY_TERRAIN';
+    const hazardColor = isCrater ? 0xf43f5e : isSlope ? 0xf59e0b : isGlitch ? 0xa855f7 : 0xef4444;
+
+    // 1. Holographic Warning Reticle Base Ring on Ground
+    const ringGeo = new THREE.RingGeometry(1.2, 1.8, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: hazardColor,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.position.set(hx, hy + 0.15, hz);
+    ringMesh.name = 'hazardRing';
+    hazardGroup.add(ringMesh);
+
+    // 2. Floating Warning Diamond Beacon
+    const beaconGeo = new THREE.OctahedronGeometry(0.8, 0);
+    const beaconMat = new THREE.MeshStandardMaterial({
+      color: hazardColor,
+      emissive: hazardColor,
+      emissiveIntensity: 0.8,
+      roughness: 0.2,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+    beaconMesh.position.set(hx, hy + 2.0, hz);
+    beaconMesh.name = 'hazardBeacon';
+    hazardGroup.add(beaconMesh);
+
+    // 3. Dynamic Warning Laser Beam Line from Rover LiDAR Mast to Hazard
+    const roverObj = roverGroupRef.current;
+    const rPos = roverObj ? roverObj.position : new THREE.Vector3(hx, hy, hz);
+    const beamGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(rPos.x, rPos.y + 1.2, rPos.z),
+      new THREE.Vector3(hx, hy + 0.8, hz),
+    ]);
+    const beamMat = new THREE.LineBasicMaterial({
+      color: hazardColor,
+      transparent: true,
+      opacity: 0.85,
+      linewidth: 2,
+    });
+    const beamLine = new THREE.Line(beamGeo, beamMat);
+    beamLine.name = 'hazardBeam';
+    hazardGroup.add(beamLine);
+
+    // 4. Rerouting Pulse Aura (when actively computing detour)
+    if (simulationStatus === 'REROUTING') {
+      const pulseGeo = new THREE.RingGeometry(1.5, 2.2, 32);
+      pulseGeo.rotateX(-Math.PI / 2);
+      const pulseMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
+      pulseMesh.position.set(rPos.x, rPos.y + 0.2, rPos.z);
+      pulseMesh.name = 'reroutePulse';
+      hazardGroup.add(pulseMesh);
+    }
+  }, [
+    sensorScan?.hasHazardAhead,
+    sensorScan?.hazardCell?.x,
+    sensorScan?.hazardCell?.y,
+    sensorScan?.hazardType,
+    simulationStatus,
+    terrain,
+  ]);
+
   // 5. High-Frequency Animation & Camera Tracking Loop
   useEffect(() => {
     let animId: number;
@@ -1100,6 +1205,29 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       // Subtle float/rotation on destination diamond
       if (destHead) {
         destHead.rotation.y += 0.02;
+      }
+
+      // Animate dynamic 3D hazard avoidance overlay
+      if (hazardMarkersGroupRef.current && hazardMarkersGroupRef.current.children.length > 0) {
+        const time = Date.now() * 0.003;
+        hazardMarkersGroupRef.current.children.forEach((child) => {
+          if (child.name === 'hazardBeacon') {
+            child.rotation.y += 0.04;
+            child.rotation.x = Math.sin(time) * 0.15;
+          } else if (child.name === 'hazardRing') {
+            child.rotation.z += 0.02;
+          } else if (child.name === 'hazardBeam' && rover) {
+            const line = child as THREE.Line;
+            const posAttr = line.geometry.attributes.position;
+            if (posAttr) {
+              posAttr.setXYZ(0, rover.position.x, rover.position.y + 1.2, rover.position.z);
+              posAttr.needsUpdate = true;
+            }
+          } else if (child.name === 'reroutePulse') {
+            child.scale.multiplyScalar(1.02);
+            if (child.scale.x > 2.5) child.scale.set(1, 1, 1);
+          }
+        });
       }
 
       // Dust particles gentle drift

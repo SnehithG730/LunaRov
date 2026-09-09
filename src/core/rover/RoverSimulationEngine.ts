@@ -6,7 +6,7 @@ import { RoverKinematics } from './RoverKinematics';
 import { EnergyModel } from './EnergyModel';
 import { CollisionSystem, SensorScanResult } from '@/core/simulation/CollisionSystem';
 import { DynamicReplanner } from '@/core/pathfinding/Replanner';
-import { clamp } from '@/lib/math';
+import { clamp, normalizeAngle, angleDifference } from '@/lib/math';
 
 export interface ManualControlsInput {
   throttle: number; // -1.0 to +1.0
@@ -112,28 +112,54 @@ export class RoverSimulationEngine {
       };
     }
 
-    // 3. 4-Step Obstacle Encounter & Dynamic Recovery (Autonomous Mode)
-    // If the path ahead is blocked by an obstacle or impassable slope:
-    //   Step 1: STOP forward motion
-    //   Step 2: IDENTIFY obstacle details
-    //   Step 3: CALCULATE a new path around the hazard
+    // 3. 4-Step Obstacle Encounter & Dynamic Hazard Avoidance (Autonomous Mode)
+    // If the path ahead is blocked by an obstacle or impassable slope/glitchy terrain:
+    //   Step 1: STOP forward motion immediately
+    //   Step 2: IDENTIFY obstacle & hazard details
+    //   Step 3: CALCULATE a new path safely around the hazard
     //   Step 4: RESUME navigation towards destination
     if (isAutonomous && scan.hasHazardAhead && scan.closestHazardDistMeters < config.sensorRangeMeters * 0.85) {
-      const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + 6);
-      const blockingCell = upcomingWaypoints
+      const lookaheadCount = Math.min(8, updatedPath.length - nextWaypointIdx);
+      const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + lookaheadCount);
+
+      // Check if any upcoming waypoint directly intersects a hazard cell
+      let blockingCell = upcomingWaypoints
         .map((p) => terrain.cells[p.y]?.[p.x])
-        .find((c) => c && (c.isObstacle || c.slope >= 22.0));
+        .find((c) => c && CollisionSystem.classifyHazard(c).isHazard);
+
+      // If no waypoint is strictly on the cell, check if the trajectory corridor passes dangerously close (<= 2.2m)
+      // or if the rover is heading directly towards the hazard within close proximity (<= 6.0m)
+      if (!blockingCell && scan.hazardCell) {
+        const hz = scan.hazardCell;
+        const distFromRoverToHz = Math.hypot(hz.x - updatedState.x, hz.y - updatedState.y) * terrain.resolution;
+
+        const isPathTooClose = upcomingWaypoints.some((wp) => {
+          const d = Math.hypot(wp.x - hz.x, wp.y - hz.y) * terrain.resolution;
+          return d <= 2.2;
+        });
+
+        const angleToHz = normalizeAngle(Math.atan2(hz.y - updatedState.y, hz.x - updatedState.x));
+        const headingDiff = Math.abs(angleDifference(angleToHz, updatedState.heading));
+        const isHeadingDirectlyAtHazard = headingDiff <= (35 * Math.PI) / 180 && distFromRoverToHz <= 6.0;
+
+        if (isPathTooClose || isHeadingDirectlyAtHazard) {
+          blockingCell = hz;
+        }
+      }
 
       if (blockingCell) {
-        // Step 1: STOP
+        // Step 1: STOP forward motion immediately
         updatedState.velocity = 0;
         updatedState.speed = 0;
         currentStatus = 'REROUTING';
 
-        // Step 2: IDENTIFY OBSTACLE
-        const obstacleDesc = blockingCell.isObstacle
-          ? (blockingCell.roughness > 2.0 ? 'Boulder / Rock Hazard' : 'Crater Rim Depression')
-          : `Excessive Slope Gradient (${blockingCell.slope.toFixed(1)}°)`;
+        // Step 2: IDENTIFY OBSTACLE & HAZARD
+        const classification = CollisionSystem.classifyHazard(blockingCell);
+        const obstacleDesc = classification.desc || (
+          blockingCell.isObstacle
+            ? (blockingCell.roughness > 2.0 ? 'Boulder / Rock Hazard' : 'Crater Rim Depression')
+            : `Excessive Slope Gradient (${blockingCell.slope.toFixed(1)}°)`
+        );
 
         newEvents.push({
           id: `evt-obs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -143,12 +169,13 @@ export class RoverSimulationEngine {
           message: `OBSTACLE IDENTIFIED at [${blockingCell.x}, ${blockingCell.y}] (${obstacleDesc}) ${scan.closestHazardDistMeters}m ahead. Halting rover for replanning.`,
         });
 
-        // Step 3: CALCULATE A NEW PATH
+        // Step 3: CALCULATE A NEW PATH SAFELY AROUND THE HAZARD
         const replanResult = DynamicReplanner.replan(
           terrain,
           { x: updatedState.x, y: updatedState.y },
           updatedPath.slice(nextWaypointIdx),
-          targetPoint
+          targetPoint,
+          { x: blockingCell.x, y: blockingCell.y }
         );
 
         // Step 4: RESUME NAVIGATION

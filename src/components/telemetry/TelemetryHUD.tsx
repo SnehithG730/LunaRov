@@ -99,7 +99,7 @@ export const TelemetryHUD: React.FC = () => {
           </div>
         </div>
 
-        {/* LiDAR Proximity Radar */}
+        {/* LiDAR Proximity Radar & AI Hazard Avoidance */}
         <div className="bg-[#0e1628] border border-cyan-950 p-2.5 rounded-lg space-y-1">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <span className="flex items-center gap-1">
@@ -108,18 +108,30 @@ export const TelemetryHUD: React.FC = () => {
             </span>
             <span>REROUTES: <strong className="text-white">{rerouteCount}</strong></span>
           </div>
-          <div className="text-lg font-bold">
-            {sensorScan?.hasHazardAhead ? (
-              <span className="text-amber-400 flex items-center gap-1 text-sm">
-                <ShieldAlert className="w-4 h-4 text-amber-400" />
-                HAZARD {sensorScan.closestHazardDistMeters}m
+          <div className="text-sm font-bold min-h-[26px] flex items-center">
+            {roverState.missionStatus === 'REROUTING' ? (
+              <span className="text-cyan-400 flex items-center gap-1.5 text-xs animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                AI RE-ROUTING DETOUR...
               </span>
+            ) : sensorScan?.hasHazardAhead ? (
+              <div className="flex flex-col">
+                <span className={`flex items-center gap-1 text-xs ${
+                  sensorScan.closestHazardDistMeters < 4 ? 'text-red-400 font-extrabold animate-pulse' : 'text-amber-400'
+                }`}>
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  {sensorScan.hazardType ? sensorScan.hazardType.replace(/_/g, ' ') : 'HAZARD'} · {sensorScan.closestHazardDistMeters}m
+                </span>
+              </div>
             ) : (
-              <span className="text-emerald-400 text-sm">SECTOR CLEAR</span>
+              <span className="text-emerald-400 text-xs flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                SECTOR CLEAR
+              </span>
             )}
           </div>
-          <div className="text-[10px] text-gray-500">
-            Sensor Arc: {roverConfig.sensorRangeMeters}m @ {roverConfig.sensorFovDeg}° FOV
+          <div className="text-[10px] text-gray-500 truncate">
+            {sensorScan?.hazardDescription ? sensorScan.hazardDescription : `Sensor Arc: ${roverConfig.sensorRangeMeters}m @ ${roverConfig.sensorFovDeg}°`}
           </div>
         </div>
       </div>

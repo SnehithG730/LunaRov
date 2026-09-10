@@ -22,7 +22,8 @@ export class EnergyModel {
 
     const m = config.massKg;
     const g = LUNAR_GRAVITY;
-    const slopeRad = (slopeDeg * Math.PI) / 180;
+    const safeSlope = isNaN(slopeDeg) || slopeDeg === undefined ? 0 : slopeDeg;
+    const slopeRad = (safeSlope * Math.PI) / 180;
 
     // Rolling resistance force: F_rr = Crr * m * g * cos(theta)
     const fRolling = REGOLITH_ROLLING_RESISTANCE * m * g * Math.cos(slopeRad);

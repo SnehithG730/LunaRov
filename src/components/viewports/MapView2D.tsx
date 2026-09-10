@@ -5,7 +5,7 @@ import { useMissionStore } from '@/core/simulation/missionStore';
 import { TERRAIN_PALETTES } from '@/lib/constants';
 import { calculateMultiObjectiveTransitionCost } from '@/core/pathfinding/PathfinderInterface';
 import { STRATEGY_METADATA } from '@/types/pathfinding';
-import { Flame, ShieldCheck, Zap } from 'lucide-react';
+import { Flame, ShieldCheck, Zap, Sun } from 'lucide-react';
 
 interface MapView2DProps {
   clickMode?: 'NONE' | 'SET_START' | 'SET_TARGET' | 'BRUSH';
@@ -27,6 +27,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
   const optimizationStrategy = useMissionStore((s) => s.optimizationStrategy);
   const objectiveWeights = useMissionStore((s) => s.objectiveWeights);
   const costHeatmapActive = useMissionStore((s) => s.costHeatmapActive);
+  const illuminationOverlayActive = useMissionStore((s) => s.illuminationOverlayActive);
   const setStartPoint = useMissionStore((s) => s.setStartPoint);
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
   const applyBrushAt = useMissionStore((s) => s.applyBrushAt);
@@ -37,6 +38,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     elevation: number;
     slope: number;
     cost: number;
+    illumination: number;
     isObstacle: boolean;
   } | null>(null);
 
@@ -56,15 +58,47 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
 
     ctx.clearRect(0, 0, width, height);
 
-    // 1. Draw Terrain Elevation Cells or Cost Heatmap
+    // 1. Draw Terrain Elevation Cells, Illumination Map, or Cost Heatmap
     const { minElevation, maxElevation } = terrain;
     const elevRange = Math.max(1, maxElevation - minElevation);
 
     for (let y = 0; y < terrain.height; y++) {
       for (let x = 0; x < terrain.width; x++) {
         const cell = terrain.cells[y][x];
+        const illum = cell.illumination ?? 0.8;
 
-        if (costHeatmapActive) {
+        if (illuminationOverlayActive) {
+          if (cell.isObstacle) {
+            ctx.fillStyle = '#1e1014';
+            ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(x * cellW + cellW * 0.25, y * cellH + cellH * 0.25, cellW * 0.5, cellH * 0.5);
+          } else {
+            // Illumination visual map:
+            // 0.0 -> Deep Navy Shadow / PSR (rgb(10, 16, 32))
+            // 0.5 -> Muted Amber Partial Sun (rgb(140, 95, 25))
+            // 1.0 -> Brilliant Gold Peak of Eternal Light (rgb(250, 205, 45))
+            let r = 0, g = 0, b = 0;
+            if (illum < 0.3) {
+              const t = illum / 0.3;
+              r = Math.floor(10 + t * 45);
+              g = Math.floor(16 + t * 40);
+              b = Math.floor(32 - t * 12);
+            } else if (illum < 0.75) {
+              const t = (illum - 0.3) / 0.45;
+              r = Math.floor(55 + t * 135);
+              g = Math.floor(56 + t * 90);
+              b = Math.floor(20 - t * 10);
+            } else {
+              const t = (illum - 0.75) / 0.25;
+              r = Math.floor(190 + t * 65);
+              g = Math.floor(146 + t * 75);
+              b = Math.floor(10 + t * 40);
+            }
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+          }
+        } else if (costHeatmapActive) {
           if (cell.isObstacle) {
             ctx.fillStyle = '#1e1014';
             ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
@@ -105,7 +139,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
             ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
           }
         } else {
-          // Standard Lunar Monochromatic + Slope Tint
+          // Standard Lunar Monochromatic + Subtle Sun Shading + Slope Tint
           const normElev = (cell.elevation - minElevation) / elevRange; // 0 to 1
 
           if (cell.isObstacle) {
@@ -114,7 +148,9 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
             ctx.fillStyle = '#dc2626';
             ctx.fillRect(x * cellW + cellW * 0.25, y * cellH + cellH * 0.25, cellW * 0.5, cellH * 0.5);
           } else {
-            const brightness = Math.floor(18 + normElev * 95);
+            const baseBrightness = 18 + normElev * 95;
+            const illumMod = 0.5 + illum * 0.5; // subtle shadow in natural mode
+            const brightness = Math.floor(baseBrightness * illumMod);
             const r = Math.min(255, Math.floor(brightness * 0.9));
             const g = Math.min(255, Math.floor(brightness * 0.95));
             const b = Math.min(255, Math.floor(brightness * 1.1));
@@ -307,6 +343,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     optimizationStrategy,
     objectiveWeights,
     costHeatmapActive,
+    illuminationOverlayActive,
   ]);
 
   useEffect(() => {
@@ -352,6 +389,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
         elevation: cell.elevation,
         slope: cell.slope,
         cost: cell.cost,
+        illumination: cell.illumination ?? 0.8,
         isObstacle: cell.isObstacle,
       });
 
@@ -395,6 +433,7 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
           <div className="flex items-center space-x-3 text-[10px]">
             <span>ELEV: <strong className="text-white">{hoverInfo.elevation.toFixed(1)}m</strong></span>
             <span>SLOPE: <strong className={hoverInfo.slope > 18 ? 'text-amber-400' : 'text-emerald-400'}>{hoverInfo.slope.toFixed(1)}°</strong></span>
+            <span>ILLUM: <strong className={hoverInfo.illumination < 0.25 ? 'text-blue-400' : hoverInfo.illumination > 0.75 ? 'text-yellow-300' : 'text-amber-400'}>{(hoverInfo.illumination * 100).toFixed(0)}%{hoverInfo.illumination < 0.2 ? ' (PSR)' : ''}</strong></span>
             <span>COST: <strong className={hoverInfo.isObstacle ? 'text-red-400 font-bold' : 'text-cyan-300'}>{hoverInfo.isObstacle ? 'IMPASSABLE' : hoverInfo.cost.toFixed(2)}</strong></span>
           </div>
         </div>
@@ -437,6 +476,12 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-400/50 text-cyan-300">
             <Flame className="w-3 h-3 text-cyan-400" />
             COST HEATMAP
+          </div>
+        )}
+        {illuminationOverlayActive && (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/80 border border-amber-400/50 text-amber-300">
+            <Sun className="w-3 h-3 text-amber-400" />
+            ILLUMINATION MAP
           </div>
         )}
       </div>

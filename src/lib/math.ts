@@ -106,6 +106,7 @@ export function manhattanDistance(p1: Point2D, p2: Point2D): number {
 }
 
 export function clamp(val: number, min: number, max: number): number {
+  if (isNaN(val) || !isFinite(val)) return min;
   return Math.max(min, Math.min(max, val));
 }
 

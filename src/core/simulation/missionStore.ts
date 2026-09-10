@@ -33,6 +33,7 @@ export interface MissionStoreState {
   objectiveWeights: ObjectiveWeights;
   strategyComparisonResult: StrategyComparisonResult | null;
   costHeatmapActive: boolean;
+  illuminationOverlayActive: boolean;
   obstacleToggles: ObstacleToggles;
   pathResult: PathfindingResult | null;
   activePath: Point2D[];
@@ -60,6 +61,7 @@ export interface MissionStoreState {
   setOptimizationStrategy: (strategy: OptimizationStrategy) => void;
   setObjectiveWeights: (weights: Partial<ObjectiveWeights>) => void;
   setCostHeatmapActive: (active: boolean) => void;
+  setIlluminationOverlayActive: (active: boolean) => void;
   compareAllStrategies: () => StrategyComparisonResult;
   validateMission: () => { valid: boolean; errors: string[] };
   computePath: () => PathfindingResult | null;
@@ -106,6 +108,13 @@ const initialRoverState: RoverState = {
   hasCrashed: false,
   goalReached: false,
   mode: 'AUTONOMOUS',
+  currentSolarPowerWatts: 0,
+  totalSolarEnergyGeneratedWh: 0,
+  totalEnergyConsumedWh: 0,
+  netEnergyWh: 0,
+  timeInIlluminationSeconds: 0,
+  timeInShadowSeconds: 0,
+  minimumBatteryRecordedPct: 100,
 };
 
 export const useMissionStore = create<MissionStoreState>((set, get) => ({
@@ -120,6 +129,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   objectiveWeights: { ...OPTIMIZATION_STRATEGY_PRESETS.BALANCED },
   strategyComparisonResult: null,
   costHeatmapActive: false,
+  illuminationOverlayActive: false,
   obstacleToggles: defaultObstacleToggles,
   pathResult: null,
   activePath: [],
@@ -276,6 +286,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   setCostHeatmapActive: (active) => set({ costHeatmapActive: active }),
+  setIlluminationOverlayActive: (active) => set({ illuminationOverlayActive: active }),
 
   compareAllStrategies: () => {
     const { terrain, startPoint, targetPoint, roverConfig, objectiveWeights, optimizationStrategy } = get();
@@ -578,9 +589,11 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       const outcome = stepResult.finishOutcome || (stepResult.simulationStatus === 'COMPLETED' ? 'SUCCESS' : 'OBSTACLE_COLLISION');
       const duration = Number(stepResult.updatedState.elapsedTimeSeconds.toFixed(1));
       const distance = Number(stepResult.updatedState.distanceTraveledMeters.toFixed(1));
-      const energyUsed = Number((state.roverConfig.batteryCapacityWh - stepResult.updatedState.batteryRemainingWh).toFixed(1));
+      const energyUsed = Number((stepResult.updatedState.totalEnergyConsumedWh ?? (state.roverConfig.batteryCapacityWh - stepResult.updatedState.batteryRemainingWh)).toFixed(1));
+      const solarGen = Number((stepResult.updatedState.totalSolarEnergyGeneratedWh ?? 0).toFixed(1));
+      const netEnergy = Number((stepResult.updatedState.netEnergyWh ?? (energyUsed - solarGen)).toFixed(1));
       const efficiency = outcome === 'SUCCESS'
-        ? Math.max(50, Math.min(100, Math.round(100 - (energyUsed / state.roverConfig.batteryCapacityWh) * 40 - stepResult.rerouteCount * 5)))
+        ? Math.max(50, Math.min(100, Math.round(100 - (netEnergy / state.roverConfig.batteryCapacityWh) * 40 - stepResult.rerouteCount * 5)))
         : outcome === 'BATTERY_DEPLETED' ? 25 : 10;
 
       const results: MissionResults = {
@@ -591,7 +604,14 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         durationSeconds: duration,
         distanceTraveledMeters: distance,
         energyConsumedWh: energyUsed,
+        solarEnergyGeneratedWh: solarGen,
+        netEnergyWh: netEnergy,
         remainingBatteryPct: stepResult.updatedState.batteryPercentage,
+        minimumBatteryPct: stepResult.updatedState.minimumBatteryRecordedPct ?? stepResult.updatedState.batteryPercentage,
+        timeInIlluminationSeconds: stepResult.updatedState.timeInIlluminationSeconds ?? 0,
+        timeInShadowSeconds: stepResult.updatedState.timeInShadowSeconds ?? 0,
+        energyEfficiencyWhPerMeter: distance > 0 ? Number((energyUsed / distance).toFixed(2)) : 0,
+        solarOffsetPct: energyUsed > 0 ? Number(((solarGen / energyUsed) * 100).toFixed(1)) : 0,
         averageSpeedMps: Number((distance / Math.max(1, duration)).toFixed(2)),
         maxSlopeEncounteredDeg: Number(
           Math.max(...state.telemetryHistory.map((t) => t.slopeDeg), stepResult.updatedState.pitch, 0)

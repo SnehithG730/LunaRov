@@ -5,6 +5,7 @@ import { useMissionStore } from '@/core/simulation/missionStore';
 import { AlgorithmType, OptimizationStrategy, STRATEGY_METADATA } from '@/types/pathfinding';
 import { TerrainType } from '@/types/terrain';
 import { StrategyComparisonModal } from '@/components/dashboard/StrategyComparisonModal';
+import { SolarModelInfoModal } from '@/components/educational/SolarModelInfoModal';
 import {
   Play,
   Pause,
@@ -24,10 +25,13 @@ import {
   ShieldCheck,
   TrendingDown,
   Clock,
+  Sun,
+  Info,
 } from 'lucide-react';
 
 export const LeftMissionControls: React.FC = () => {
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+  const [isSolarModalOpen, setIsSolarModalOpen] = useState(false);
   const [showCustomWeights, setShowCustomWeights] = useState(false);
 
   const simulationStatus = useMissionStore((s) => s.simulationStatus);
@@ -35,6 +39,7 @@ export const LeftMissionControls: React.FC = () => {
   const optimizationStrategy = useMissionStore((s) => s.optimizationStrategy);
   const objectiveWeights = useMissionStore((s) => s.objectiveWeights);
   const costHeatmapActive = useMissionStore((s) => s.costHeatmapActive);
+  const illuminationOverlayActive = useMissionStore((s) => s.illuminationOverlayActive);
   const pathResult = useMissionStore((s) => s.pathResult);
   const terrain = useMissionStore((s) => s.terrain);
   const startPoint = useMissionStore((s) => s.startPoint);
@@ -44,6 +49,7 @@ export const LeftMissionControls: React.FC = () => {
   const setOptimizationStrategy = useMissionStore((s) => s.setOptimizationStrategy);
   const setObjectiveWeights = useMissionStore((s) => s.setObjectiveWeights);
   const setCostHeatmapActive = useMissionStore((s) => s.setCostHeatmapActive);
+  const setIlluminationOverlayActive = useMissionStore((s) => s.setIlluminationOverlayActive);
   const computePath = useMissionStore((s) => s.computePath);
   const startSimulation = useMissionStore((s) => s.startSimulation);
   const pauseSimulation = useMissionStore((s) => s.pauseSimulation);
@@ -63,6 +69,7 @@ export const LeftMissionControls: React.FC = () => {
   const strategies: { id: OptimizationStrategy; label: string; icon: any }[] = [
     { id: 'BALANCED', label: 'Balanced', icon: Sparkles },
     { id: 'MIN_ENERGY', label: 'Min Energy', icon: Zap },
+    { id: 'SOLAR_OPTIMIZED', label: 'Solar Opt', icon: Sun },
     { id: 'SAFEST', label: 'Safest', icon: ShieldCheck },
     { id: 'SHORTEST', label: 'Shortest', icon: TrendingDown },
     { id: 'FASTEST', label: 'Fastest', icon: Clock },
@@ -299,6 +306,24 @@ export const LeftMissionControls: React.FC = () => {
                   className="w-full accent-amber-400 h-1 bg-slate-800 rounded cursor-pointer"
                 />
               </div>
+
+              <div className="space-y-0.5">
+                <div className="flex justify-between text-[9.5px]">
+                  <span className="text-yellow-400 flex items-center gap-1">
+                    <Sun className="w-2.5 h-2.5" /> Solar Shadow Avoidance (w_solar):
+                  </span>
+                  <span className="text-yellow-300 font-bold">{(objectiveWeights.solar ?? 0.0).toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={objectiveWeights.solar ?? 0.0}
+                  onChange={(e) => setObjectiveWeights({ solar: parseFloat(e.target.value) })}
+                  className="w-full accent-yellow-400 h-1 bg-slate-800 rounded cursor-pointer"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -376,9 +401,23 @@ export const LeftMissionControls: React.FC = () => {
                   <strong className="text-cyan-300">{pathResult.totalDistanceMeters} m</strong>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Est. Energy:</span>
-                  <strong className="text-emerald-300">{pathResult.estimatedEnergyWh} Wh</strong>
+                  <span className="text-gray-500">Est. Energy Consumed:</span>
+                  <strong className="text-amber-300">{pathResult.estimatedEnergyWh} Wh</strong>
                 </div>
+                {pathResult.solarEnergyGeneratedWh !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-yellow-400 flex items-center gap-1">
+                      <Sun className="w-2.5 h-2.5" /> Solar Generation:
+                    </span>
+                    <strong className="text-yellow-300">+{pathResult.solarEnergyGeneratedWh} Wh</strong>
+                  </div>
+                )}
+                {pathResult.netEnergyWh !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Net Energy Delta:</span>
+                    <strong className="text-emerald-300">{pathResult.netEnergyWh} Wh</strong>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-500">Battery Rem.:</span>
                   <strong className={pathResult.batteryRemainingPct < 20 ? 'text-rose-400' : 'text-slate-200'}>
@@ -424,7 +463,7 @@ export const LeftMissionControls: React.FC = () => {
         <div className="flex items-center justify-between border-b border-cyan-900/40 pb-2">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-cyan-400" />
-            <span className="font-extrabold text-white tracking-wider text-xs">LUNAR TERRAIN</span>
+            <span className="font-extrabold text-white tracking-wider text-xs">LUNAR TERRAIN & SOLAR</span>
           </div>
           <button
             onClick={() => regenerateTerrain()}
@@ -455,18 +494,44 @@ export const LeftMissionControls: React.FC = () => {
           ))}
         </div>
 
-        {/* Cost Heatmap Toggle */}
-        <div className="pt-2 border-t border-cyan-900/30 flex items-center justify-between">
-          <span className="text-[10px] text-slate-400">Cost Heatmap Overlay:</span>
+        {/* Map Overlays: Cost Heatmap & Illumination Overlay */}
+        <div className="pt-2 border-t border-cyan-900/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-400">Cost Heatmap:</span>
+            <button
+              onClick={() => setCostHeatmapActive(!costHeatmapActive)}
+              className={`text-[9.5px] px-2 py-0.5 rounded font-bold transition-all border cursor-pointer ${
+                costHeatmapActive
+                  ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.4)]'
+                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+            >
+              {costHeatmapActive ? 'ENABLED' : 'DISABLED'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-amber-300 flex items-center gap-1">
+              <Sun className="w-3 h-3 text-amber-400" /> Illumination Map:
+            </span>
+            <button
+              onClick={() => setIlluminationOverlayActive(!illuminationOverlayActive)}
+              className={`text-[9.5px] px-2 py-0.5 rounded font-bold transition-all border cursor-pointer ${
+                illuminationOverlayActive
+                  ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+            >
+              {illuminationOverlayActive ? 'ENABLED' : 'DISABLED'}
+            </button>
+          </div>
+
           <button
-            onClick={() => setCostHeatmapActive(!costHeatmapActive)}
-            className={`text-[9.5px] px-2 py-0.5 rounded font-bold transition-all border cursor-pointer ${
-              costHeatmapActive
-                ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.4)]'
-                : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
-            }`}
+            onClick={() => setIsSolarModalOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 text-[10px] font-semibold transition-colors cursor-pointer"
           >
-            {costHeatmapActive ? 'ENABLED' : 'DISABLED'}
+            <Info className="w-3 h-3 text-amber-400" />
+            <span>Solar Model Principles</span>
           </button>
         </div>
 
@@ -487,6 +552,12 @@ export const LeftMissionControls: React.FC = () => {
       <StrategyComparisonModal
         isOpen={isCompareModalOpen}
         onClose={() => setIsCompareModalOpen(false)}
+      />
+
+      {/* Solar Model Educational Info Modal */}
+      <SolarModelInfoModal
+        isOpen={isSolarModalOpen}
+        onClose={() => setIsSolarModalOpen(false)}
       />
     </div>
   );

@@ -9,6 +9,7 @@ export interface TerrainCell {
   isObstacle: boolean;     // Impassable terrain (cliff slope > 25°, crater rim, or boulder)
   cost: number;            // Traversal cost multiplier: 1.0 (baseline) to Infinity (impassable)
   discovered: boolean;     // Sensor visibility / Fog of war state
+  illumination: number;    // Solar illumination factor: 0.0 (deep shadow / PSR) to 1.0 (full sunlight)
 }
 
 export interface TerrainGrid {
@@ -20,6 +21,8 @@ export interface TerrainGrid {
   seed: number;
   minElevation: number;
   maxElevation: number;
+  sunAzimuthDeg?: number;  // Solar azimuth angle in degrees (0-360)
+  sunElevationDeg?: number;// Solar elevation angle in degrees (e.g. 2.5° for lunar south pole)
 }
 
 export interface CraterSpec {

@@ -54,14 +54,14 @@ export class AStarPathfinder implements IPathfinder {
     }
 
     // Heuristic function h(n)
-    // Scale heuristic conservatively to maintain admissibility under weighted costs
-    const heuristicScale = Math.max(0.5, (weights.distance * 1.0 + weights.time * 0.5 + 0.2));
+    // Scale heuristic conservatively to maintain strict admissibility (h(n) <= h*(n))
+    const heuristicScale = Math.min(1.0, Math.max(0.2, weights.distance + (weights.time ?? 0) * 0.3));
     const getH = (p: Point2D): number => {
       let d = 0;
       if (heuristicType === 'OCTILE') d = octileDistance(p, target);
       else if (heuristicType === 'EUCLIDEAN') d = euclideanDistance(p, target);
       else d = manhattanDistance(p, target);
-      return d * grid.resolution * heuristicScale;
+      return d * heuristicScale;
     };
 
     const openSet = new PriorityQueue<PathNode>();
@@ -117,11 +117,11 @@ export class AStarPathfinder implements IPathfinder {
         const cellCost = resolveCellCost(nCell, options);
         if (cellCost >= Infinity || isCellBlocked(nCell, options)) continue;
 
-        // Prevent diagonal cutting through two blocked adjacent cells
+        // Prevent diagonal cutting through any blocked adjacent cells
         if (offset.isDiag && offset.adj1 && offset.adj2) {
           const adj1 = grid.cells[current.y + offset.adj1.dy][current.x + offset.adj1.dx];
           const adj2 = grid.cells[current.y + offset.adj2.dy][current.x + offset.adj2.dx];
-          if (isCellBlocked(adj1, options) && isCellBlocked(adj2, options)) continue;
+          if (isCellBlocked(adj1, options) || isCellBlocked(adj2, options)) continue;
         }
 
         // Multi-objective transition cost calculation
@@ -228,6 +228,11 @@ export class AStarPathfinder implements IPathfinder {
       computeTimeMs: Number(executionTimeMs.toFixed(2)),
       success: true,
       estimatedEnergyWh: metrics.estimatedEnergyWh,
+      solarEnergyGeneratedWh: metrics.solarEnergyGeneratedWh,
+      netEnergyWh: metrics.netEnergyWh,
+      minimumBatteryPct: metrics.minimumBatteryPct,
+      timeInIlluminationSeconds: metrics.timeInIlluminationSeconds,
+      timeInShadowSeconds: metrics.timeInShadowSeconds,
       estimatedTravelTimeSeconds: metrics.estimatedTravelTimeSeconds,
       averageSlopeDeg: metrics.averageSlopeDeg,
       maxSlopeDeg: metrics.maxSlopeDeg,
@@ -257,6 +262,11 @@ export class AStarPathfinder implements IPathfinder {
       success: false,
       failureReason: reason,
       estimatedEnergyWh: 0,
+      solarEnergyGeneratedWh: 0,
+      netEnergyWh: 0,
+      minimumBatteryPct: 100,
+      timeInIlluminationSeconds: 0,
+      timeInShadowSeconds: 0,
       estimatedTravelTimeSeconds: 0,
       averageSlopeDeg: 0,
       maxSlopeDeg: 0,

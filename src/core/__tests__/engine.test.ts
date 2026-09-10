@@ -57,3 +57,9 @@ import './simulationEngine.test';
 // Trigger Multi-Objective Pathfinding Unit Tests
 import './multiObjective.test';
 
+// Trigger Solar-Aware Pathfinding Unit Tests
+import './solarAwarePathfinding.test';
+
+// Trigger Manual & Multi-Algorithm Hazard Crossing Tests
+import './manualAndMultiAlgoHazardTest.test';
+

@@ -18,6 +18,8 @@ import {
   RotateCcw,
   Sparkles,
   Cpu,
+  Sun,
+  ShieldAlert,
 } from 'lucide-react';
 
 const PRESET_ROVER_NAMES = [
@@ -252,6 +254,52 @@ export const MissionConfigPanel: React.FC = () => {
                 <span>1.8x (Ultra Efficient)</span>
               </div>
             </div>
+
+            {/* Solar Array Peak Capacity */}
+            <div className="space-y-1 pt-1 border-t border-slate-900">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Sun className="w-3 h-3 text-amber-400" /> Solar Array Peak Capacity:
+                </span>
+                <span className="text-amber-300 font-bold">{roverConfig.solarCapacityWatts ?? 250} W</span>
+              </div>
+              <input
+                type="range"
+                min={50}
+                max={600}
+                step={25}
+                value={roverConfig.solarCapacityWatts ?? 250}
+                onChange={(e) => setRoverConfig({ solarCapacityWatts: parseInt(e.target.value) })}
+                className="w-full accent-amber-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+              />
+              <div className="flex justify-between text-[9px] font-mono text-slate-600">
+                <span>50 W (Compact Panel)</span>
+                <span>600 W (Dual Deployable Array)</span>
+              </div>
+            </div>
+
+            {/* Minimum Reserve Warning Level */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3 text-rose-400" /> Minimum Battery Reserve:
+                </span>
+                <span className="text-rose-300 font-bold">{roverConfig.minimumBatteryReservePct ?? 15}%</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={40}
+                step={1}
+                value={roverConfig.minimumBatteryReservePct ?? 15}
+                onChange={(e) => setRoverConfig({ minimumBatteryReservePct: parseInt(e.target.value) })}
+                className="w-full accent-rose-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+              />
+              <div className="flex justify-between text-[9px] font-mono text-slate-600">
+                <span>5% (Aggressive)</span>
+                <span>40% (Conservative)</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -343,6 +391,7 @@ export const MissionConfigPanel: React.FC = () => {
             {[
               { id: 'BALANCED' as OptimizationStrategy, label: 'Balanced', color: '#a855f7' },
               { id: 'MIN_ENERGY' as OptimizationStrategy, label: 'Min Energy', color: '#10b981' },
+              { id: 'SOLAR_OPTIMIZED' as OptimizationStrategy, label: 'Solar Opt', color: '#f59e0b' },
               { id: 'SAFEST' as OptimizationStrategy, label: 'Safest', color: '#3b82f6' },
               { id: 'SHORTEST' as OptimizationStrategy, label: 'Shortest', color: '#06b6d4' },
               { id: 'FASTEST' as OptimizationStrategy, label: 'Fastest', color: '#f59e0b' },
@@ -403,6 +452,25 @@ export const MissionConfigPanel: React.FC = () => {
                 value={objectiveWeights.energy}
                 onChange={(e) => setObjectiveWeights({ energy: parseFloat(e.target.value) })}
                 className="w-full accent-emerald-400 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+
+            {/* Solar Weight */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-yellow-400 flex items-center gap-1">
+                  <Sun className="w-2.5 h-2.5" /> Solar Shadow Avoidance (w_solar):
+                </span>
+                <span className="text-yellow-300 font-bold">{(objectiveWeights.solar ?? 0.0).toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={objectiveWeights.solar ?? 0.0}
+                onChange={(e) => setObjectiveWeights({ solar: parseFloat(e.target.value) })}
+                className="w-full accent-yellow-400 h-1 bg-slate-800 rounded cursor-pointer"
               />
             </div>
 

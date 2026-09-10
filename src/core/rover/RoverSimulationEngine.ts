@@ -4,6 +4,7 @@ import { Point2D, PathfindingResult } from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent } from '@/types/mission';
 import { RoverKinematics } from './RoverKinematics';
 import { EnergyModel } from './EnergyModel';
+import { SolarModel } from './SolarModel';
 import { CollisionSystem, SensorScanResult } from '@/core/simulation/CollisionSystem';
 import { DynamicReplanner } from '@/core/pathfinding/Replanner';
 import { clamp } from '@/lib/math';
@@ -97,7 +98,7 @@ export class RoverSimulationEngine {
       });
 
       const currentCell = this.getCellAt(updatedState.x, updatedState.y, terrain);
-      const telemetry = this.createTelemetryPoint(updatedState, currentCell, 0, terrain);
+      const telemetry = this.createTelemetryPoint(updatedState, currentCell, 0, 0, terrain);
 
       return {
         updatedState,
@@ -114,18 +115,13 @@ export class RoverSimulationEngine {
     }
 
     // 3. 4-Step Obstacle Encounter & Dynamic Recovery (Autonomous Mode)
-    // If the path ahead is blocked by an obstacle or impassable slope:
-    //   Step 1: STOP forward motion
-    //   Step 2: IDENTIFY obstacle details
-    //   Step 3: CALCULATE a new path around the hazard
-    //   Step 4: RESUME navigation towards destination
     let newPathResult = undefined;
 
     if (isAutonomous && scan.hasHazardAhead && scan.closestHazardDistMeters < config.sensorRangeMeters * 0.85) {
       const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + 8);
       const blockingCell = upcomingWaypoints
         .map((p) => terrain.cells[Math.round(p.y)]?.[Math.round(p.x)])
-        .find((c) => c && (c.isObstacle || c.slope >= 22.0));
+        .find((c) => c && (c.isObstacle || c.cost === Infinity || c.slope >= 25.0));
 
       if (blockingCell) {
         // Step 1: STOP
@@ -193,21 +189,25 @@ export class RoverSimulationEngine {
           });
         } else {
           // Path completely obstructed
-          currentStatus = 'PAUSED';
+          currentStatus = 'FAILED';
+          updatedState.missionStatus = 'FAILED';
           newEvents.push({
             id: `evt-replan-fail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             timestamp: Date.now(),
             simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
             type: 'ALERT',
-            message: 'REPLAN FAILED: No traversable detour exists around detected barrier. Standing by in HOLD state.',
+            message: 'REPLAN FAILED: Route completely obstructed. No traversable detour exists.',
           });
         }
       }
     }
 
-    // 4. Kinematics Movement Update
+    // 4. Motion Update
+    const prevCell = this.getCellAt(state.x, state.y, terrain);
+    const prevIllum = prevCell.illumination ?? 1.0;
+
     if (!isAutonomous) {
-      // MANUAL MODE
+      // Manual Piloting Mode
       let throttle = manualControls?.throttle ?? 0;
       const steering = manualControls?.steering ?? 0;
       const brake = manualControls?.brake ?? false;
@@ -233,20 +233,26 @@ export class RoverSimulationEngine {
         updatedState.goalReached = true;
         updatedState.velocity = 0;
       }
-    } else {
-      // AUTONOMOUS MODE
+    } else if (currentStatus === 'RUNNING') {
+      // Autonomous Waypoint Trajectory Following
       if (nextWaypointIdx < updatedPath.length) {
-        const currentTargetWp = updatedPath[nextWaypointIdx];
-        const res = RoverKinematics.updateAutonomous(
+        const currentTarget = updatedPath[nextWaypointIdx];
+        const motion = RoverKinematics.updateAutonomous(
           updatedState,
           config,
-          currentTargetWp,
+          currentTarget,
           terrain,
           dtSeconds
         );
-        updatedState = res.updatedState;
-        if (res.reachedWaypoint) {
+
+        updatedState = motion.updatedState;
+
+        if (motion.reachedWaypoint) {
           nextWaypointIdx += 1;
+          if (nextWaypointIdx >= updatedPath.length) {
+            updatedState.goalReached = true;
+            updatedState.velocity = 0;
+          }
         }
       } else {
         // Trajectory complete
@@ -263,13 +269,7 @@ export class RoverSimulationEngine {
     updatedState.currentTerrain = terrain.type;
     updatedState.missionStatus = currentStatus;
 
-    // 5. Battery Power & Energy Consumption Model
-    // Dependent on:
-    // - Distance moved (proportional to velocity * dt)
-    // - Terrain roughness & friction
-    // - Rover speed
-    // - Slope gradient (positive = uphill power draw, negative = reduced draw)
-    // - Obstacle rerouting (energy penalty applied during replan)
+    // 5. Battery Power, Solar Energy Generation & Net Balance
     const powerDrawWatts = EnergyModel.calculatePowerDrawWatts(
       config,
       updatedState.velocity,
@@ -278,7 +278,17 @@ export class RoverSimulationEngine {
     );
     const energyDrainWh = EnergyModel.calculateEnergyDrainWh(powerDrawWatts, dtSeconds);
 
-    updatedState.batteryRemainingWh = Math.max(0, updatedState.batteryRemainingWh - energyDrainWh);
+    const currentIllum = currentCell.illumination ?? 1.0;
+    const solarPowerWatts = SolarModel.calculateSolarPowerWatts(config, currentIllum);
+    const solarEnergyGeneratedWh = (solarPowerWatts * dtSeconds) / 3600;
+    const netPowerWatts = SolarModel.calculateNetPowerWatts(powerDrawWatts, solarPowerWatts);
+    const netEnergyDeltaWh = (netPowerWatts * dtSeconds) / 3600;
+
+    // Update battery with upper ceiling clamping (cannot exceed capacity)
+    updatedState.batteryRemainingWh = Math.min(
+      config.batteryCapacityWh,
+      Math.max(0, updatedState.batteryRemainingWh - netEnergyDeltaWh)
+    );
     updatedState.batteryPercentage = Number(
       ((updatedState.batteryRemainingWh / config.batteryCapacityWh) * 100).toFixed(1)
     );
@@ -286,7 +296,62 @@ export class RoverSimulationEngine {
     updatedState.elapsedTimeSeconds += dtSeconds;
     updatedState.elapsedTime = updatedState.elapsedTimeSeconds;
 
-    // 6. Battery Depletion Evaluation
+    // Track cumulative solar metrics (preserve raw precision during integration)
+    updatedState.currentSolarPowerWatts = solarPowerWatts;
+    updatedState.totalSolarEnergyGeneratedWh = (updatedState.totalSolarEnergyGeneratedWh || 0) + solarEnergyGeneratedWh;
+    updatedState.totalEnergyConsumedWh = (updatedState.totalEnergyConsumedWh || 0) + energyDrainWh;
+    updatedState.netEnergyWh = updatedState.totalEnergyConsumedWh - updatedState.totalSolarEnergyGeneratedWh;
+
+    if (currentIllum > 0.3) {
+      updatedState.timeInIlluminationSeconds = (updatedState.timeInIlluminationSeconds || 0) + dtSeconds;
+    } else {
+      updatedState.timeInShadowSeconds = (updatedState.timeInShadowSeconds || 0) + dtSeconds;
+    }
+
+    updatedState.minimumBatteryRecordedPct = Math.min(
+      updatedState.minimumBatteryRecordedPct ?? 100,
+      updatedState.batteryPercentage
+    );
+
+    // 6. Illumination & Energy Transition Events
+    if (prevIllum <= 0.3 && currentIllum > 0.6) {
+      newEvents.push({
+        id: `evt-solar-enter-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
+        type: 'SUCCESS',
+        message: `Entering high illumination region. Solar charging active (+${solarPowerWatts}W).`,
+      });
+    } else if (prevIllum > 0.3 && currentIllum <= 0.3) {
+      newEvents.push({
+        id: `evt-solar-exit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
+        type: 'WARNING',
+        message: 'Entering shadowed terrain / Permanently Shadowed Region (PSR). Solar input: 0W.',
+      });
+    }
+
+    const minReserveThreshold = config.minimumBatteryReservePct ?? 20;
+    if (state.batteryPercentage >= minReserveThreshold && updatedState.batteryPercentage < minReserveThreshold) {
+      newEvents.push({
+        id: `evt-batt-res-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
+        type: 'WARNING',
+        message: `Low battery warning: Battery level (${updatedState.batteryPercentage}%) dropped below ${minReserveThreshold}% reserve safety margin.`,
+      });
+    } else if (state.batteryPercentage >= 10 && updatedState.batteryPercentage < 10) {
+      newEvents.push({
+        id: `evt-batt-crit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
+        type: 'ALERT',
+        message: 'CRITICAL ENERGY RESERVE: Battery under 10%! Rover entering power preservation mode.',
+      });
+    }
+
+    // 7. Battery Depletion Evaluation
     if (updatedState.batteryRemainingWh <= 0) {
       updatedState.velocity = 0;
       updatedState.speed = 0;
@@ -300,7 +365,7 @@ export class RoverSimulationEngine {
         message: 'POWER EXHAUSTION: Battery capacity completely depleted. Rover shut down.',
       });
 
-      const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, terrain);
+      const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, solarPowerWatts, terrain);
       return {
         updatedState,
         nextWaypointIndex: nextWaypointIdx,
@@ -315,7 +380,7 @@ export class RoverSimulationEngine {
       };
     }
 
-    // 7. Goal Destination Arrival Check
+    // 8. Goal Destination Arrival Check
     if (updatedState.goalReached) {
       updatedState.missionStatus = 'COMPLETED';
       newEvents.push({
@@ -326,7 +391,7 @@ export class RoverSimulationEngine {
         message: 'MISSION ACCOMPLISHED: Target coordinates reached within safe operational margins!',
       });
 
-      const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, terrain);
+      const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, solarPowerWatts, terrain);
       return {
         updatedState,
         nextWaypointIndex: nextWaypointIdx,
@@ -341,8 +406,8 @@ export class RoverSimulationEngine {
       };
     }
 
-    // 8. Continuous Telemetry Generation
-    const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, terrain);
+    // 9. Continuous Telemetry Generation
+    const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, solarPowerWatts, terrain);
 
     return {
       updatedState,
@@ -368,19 +433,31 @@ export class RoverSimulationEngine {
     state: RoverState,
     cell: TerrainCell,
     powerDrawWatts: number,
+    solarPowerWatts: number,
     terrain: TerrainGrid
   ): TelemetryPoint {
+    const illum = cell.illumination ?? 1.0;
+    const netWatts = Number((powerDrawWatts - solarPowerWatts).toFixed(1));
+    const vel = state.velocity ?? state.speed ?? 0;
+    const pitch = state.pitch ?? 0;
+    const heading = state.heading ?? 0;
+    const battWh = state.batteryRemainingWh ?? 0;
+    const battPct = state.batteryPercentage ?? 0;
+
     return {
       timestamp: Date.now(),
       x: Number((state.x * terrain.resolution).toFixed(2)),
       y: Number((state.y * terrain.resolution).toFixed(2)),
-      speed: Number(state.velocity.toFixed(2)),
-      batteryPct: state.batteryPercentage,
-      batteryWh: Number(state.batteryRemainingWh.toFixed(1)),
-      elevation: Number(cell.elevation.toFixed(2)),
-      slopeDeg: Number(state.pitch.toFixed(1)),
+      speed: Number(vel.toFixed(2)),
+      batteryPct: battPct,
+      batteryWh: Number(battWh.toFixed(1)),
+      elevation: Number((cell.elevation ?? 0).toFixed(2)),
+      slopeDeg: Number(pitch.toFixed(1)),
       powerDrawWatts: Number(powerDrawWatts.toFixed(1)),
-      headingDeg: Number(((state.heading * 180) / Math.PI).toFixed(1)),
+      solarPowerWatts: Number(solarPowerWatts.toFixed(1)),
+      netPowerWatts: netWatts,
+      illumination: Number(illum.toFixed(2)),
+      headingDeg: Number(((heading * 180) / Math.PI).toFixed(1)),
     };
   }
 }

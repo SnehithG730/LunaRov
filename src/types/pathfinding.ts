@@ -9,6 +9,7 @@ export type OptimizationStrategy =
   | 'SAFEST'
   | 'FASTEST'
   | 'BALANCED'
+  | 'SOLAR_OPTIMIZED'
   | 'CUSTOM';
 
 export interface ObjectiveWeights {
@@ -17,17 +18,19 @@ export interface ObjectiveWeights {
   slope: number;    // 0..1
   risk: number;     // 0..1
   time: number;     // 0..1
+  solar?: number;   // 0..1 (Solar illumination reward / shadow penalty)
 }
 
 export const OPTIMIZATION_STRATEGY_PRESETS: Record<
   Exclude<OptimizationStrategy, 'CUSTOM'>,
   ObjectiveWeights
 > = {
-  SHORTEST: { distance: 1.0, energy: 0.0, slope: 0.1, risk: 0.1, time: 0.0 },
-  MIN_ENERGY: { distance: 0.2, energy: 1.0, slope: 0.8, risk: 0.3, time: 0.1 },
-  SAFEST: { distance: 0.1, energy: 0.2, slope: 0.9, risk: 1.0, time: 0.0 },
-  FASTEST: { distance: 0.4, energy: 0.1, slope: 0.3, risk: 0.2, time: 1.0 },
-  BALANCED: { distance: 0.5, energy: 0.5, slope: 0.5, risk: 0.5, time: 0.5 },
+  SHORTEST: { distance: 1.0, energy: 0.0, slope: 0.1, risk: 0.1, time: 0.0, solar: 0.0 },
+  MIN_ENERGY: { distance: 0.2, energy: 1.0, slope: 0.8, risk: 0.3, time: 0.1, solar: 0.3 },
+  SAFEST: { distance: 0.1, energy: 0.2, slope: 0.9, risk: 1.0, time: 0.0, solar: 0.2 },
+  FASTEST: { distance: 0.4, energy: 0.1, slope: 0.3, risk: 0.2, time: 1.0, solar: 0.0 },
+  BALANCED: { distance: 0.5, energy: 0.5, slope: 0.5, risk: 0.5, time: 0.5, solar: 0.5 },
+  SOLAR_OPTIMIZED: { distance: 0.2, energy: 0.7, slope: 0.4, risk: 0.3, time: 0.1, solar: 1.0 },
 };
 
 export const STRATEGY_METADATA: Record<
@@ -63,6 +66,12 @@ export const STRATEGY_METADATA: Record<
     shortDesc: 'Equal weighting across distance, energy, slope, risk, and travel time.',
     tag: 'RECOMMENDED',
     color: '#a855f7', // purple-500
+  },
+  SOLAR_OPTIMIZED: {
+    label: 'Solar Optimized',
+    shortDesc: 'Prioritizes sunlit peaks & ridges to maximize solar charging & battery reserve.',
+    tag: 'SOLAR MAX',
+    color: '#eab308', // yellow-500
   },
   CUSTOM: {
     label: 'Custom Weights',
@@ -134,6 +143,8 @@ export interface CostBreakdown {
   slopeCost: number;
   riskCost: number;
   timeCost: number;
+  solarCost?: number;
+  solarReward?: number;
   totalWeightedCost: number;
 }
 
@@ -154,7 +165,12 @@ export interface PathfindingResult {
   computeTimeMs: number;              // Backwards-compatible alias
   success: boolean;
   failureReason?: string;
-  estimatedEnergyWh: number;
+  estimatedEnergyWh: number;          // Gross mechanical/avionics energy consumed (Wh)
+  solarEnergyGeneratedWh?: number;    // Estimated solar energy generated along path (Wh)
+  netEnergyWh?: number;                // Net energy balance: consumed - solar generated (Wh)
+  minimumBatteryPct?: number;         // Minimum battery level reached along route (%)
+  timeInIlluminationSeconds?: number; // Estimated seconds in sunlight (>0.3)
+  timeInShadowSeconds?: number;       // Estimated seconds in shadow (<=0.3)
   estimatedTravelTimeSeconds: number;
   averageSlopeDeg: number;
   maxSlopeDeg: number;
@@ -191,6 +207,11 @@ export interface StrategyComparisonItem {
   name: string;
   distanceMeters: number;
   estimatedEnergyWh: number;
+  solarEnergyGeneratedWh?: number;
+  netEnergyWh?: number;
+  minimumBatteryPct?: number;
+  timeInIlluminationSeconds?: number;
+  timeInShadowSeconds?: number;
   estimatedTravelTimeSeconds: number;
   averageSlopeDeg: number;
   maxSlopeDeg: number;
@@ -208,6 +229,7 @@ export interface StrategyComparisonResult {
   results: Record<OptimizationStrategy, PathfindingResult | null>;
   comparisons: StrategyComparisonItem[];
   lowestEnergyStrategy?: OptimizationStrategy;
+  bestSolarStrategy?: OptimizationStrategy;
   safestStrategy?: OptimizationStrategy;
   shortestDistanceStrategy?: OptimizationStrategy;
   fastestStrategy?: OptimizationStrategy;

@@ -49,7 +49,7 @@ export class CollisionSystem {
           scannedCells.push({ x, y });
           const cell = grid.cells[y][x];
 
-          if (cell.isObstacle || cell.slope > 22.0) {
+          if (cell.isObstacle || cell.cost === Infinity || cell.slope >= 25.0) {
             hasHazardAhead = true;
             if (distMeters < closestHazardDistMeters) {
               closestHazardDistMeters = distMeters;

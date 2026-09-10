@@ -22,6 +22,7 @@ import {
   Sparkles,
   ArrowRight,
   HelpCircle,
+  Sun,
 } from 'lucide-react';
 
 interface StrategyComparisonModalProps {
@@ -57,7 +58,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
 
   if (!isOpen) return null;
 
-  const strategies: OptimizationStrategy[] = ['SHORTEST', 'MIN_ENERGY', 'SAFEST', 'FASTEST', 'BALANCED'];
+  const strategies: OptimizationStrategy[] = ['SHORTEST', 'MIN_ENERGY', 'SOLAR_OPTIMIZED', 'SAFEST', 'FASTEST', 'BALANCED'];
 
   const handleSelectStrategy = (strat: OptimizationStrategy) => {
     setOptimizationStrategy(strat);
@@ -67,7 +68,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="bg-[#0b1220] border border-cyan-800/80 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-200 font-mono">
+      <div className="bg-[#0b1220] border border-cyan-800/80 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-200 font-mono">
         {/* Header */}
         <div className="p-4 border-b border-cyan-900/60 bg-slate-900/80 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -84,7 +85,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-sans mt-0.5">
-                Compare autonomous trajectories across distance, battery draw, slope difficulty, safety, and travel time.
+                Compare autonomous trajectories across distance, battery draw, solar harvesting, slope, safety, and time.
               </p>
             </div>
           </div>
@@ -114,7 +115,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
           <div className="flex items-center gap-2">
             <HelpCircle className="w-4 h-4 text-cyan-400 shrink-0" />
             <span>
-              <strong>Engineering Principle:</strong> Lunar traversal is inherently multi-objective. Minimizing distance often forces steep slope climbs that drain battery or risk rollover.
+              <strong>Engineering Principle:</strong> Lunar traversal is inherently multi-objective. Minimizing distance often forces steep slope climbs that drain battery or pass through dark PSRs devoid of solar energy.
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 ml-4">
@@ -144,12 +145,13 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
           {activeTab === 'OVERVIEW' ? (
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
               {strategies.map((strat) => {
                 const meta = STRATEGY_METADATA[strat];
                 const item = comparison?.comparisons.find((c) => c.strategy === strat);
                 const isCurrent = optimizationStrategy === strat;
                 const isBestEnergy = comparison?.lowestEnergyStrategy === strat;
+                const isBestSolar = comparison?.bestSolarStrategy === strat;
                 const isSafest = comparison?.safestStrategy === strat;
                 const isShortest = comparison?.shortestDistanceStrategy === strat;
                 const isFastest = comparison?.fastestStrategy === strat;
@@ -157,7 +159,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                 return (
                   <div
                     key={strat}
-                    className={`rounded-xl p-3.5 border flex flex-col justify-between transition-all relative ${
+                    className={`rounded-xl p-3 border flex flex-col justify-between transition-all relative ${
                       isCurrent
                         ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_16px_rgba(6,182,212,0.2)]'
                         : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
@@ -165,12 +167,12 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                   >
                     {/* Active Ribbon */}
                     {isCurrent && (
-                      <div className="absolute -top-2.5 left-3 px-2 py-0.5 rounded bg-cyan-400 text-black text-[9px] font-black uppercase tracking-wider shadow-sm">
+                      <div className="absolute -top-2.5 left-2 px-1.5 py-0.2 rounded bg-cyan-400 text-black text-[8.5px] font-black uppercase tracking-wider shadow-sm">
                         Active Route
                       </div>
                     )}
 
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       {/* Strategy Title & Tag */}
                       <div className="flex items-start justify-between gap-1 pt-1">
                         <div>
@@ -178,7 +180,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                             {meta.label}
                           </h3>
                           <span
-                            className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase inline-block mt-1"
+                            className="text-[8.5px] px-1.5 py-0.2 rounded font-bold uppercase inline-block mt-0.5"
                             style={{ backgroundColor: `${meta.color}20`, color: meta.color, borderColor: `${meta.color}50` }}
                           >
                             {meta.tag}
@@ -186,7 +188,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                         </div>
                         {item && (
                           <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                            className={`text-[8.5px] px-1 py-0.2 rounded font-bold uppercase ${
                               item.feasibility === 'FEASIBLE'
                                 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                                 : item.feasibility === 'WARNING'
@@ -200,29 +202,34 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                       </div>
 
                       {/* Description */}
-                      <p className="text-[10.5px] text-slate-400 font-sans leading-relaxed line-clamp-2">
+                      <p className="text-[10px] text-slate-400 font-sans leading-relaxed line-clamp-2">
                         {meta.shortDesc}
                       </p>
 
                       {/* Highlight Badges */}
                       <div className="flex flex-wrap gap-1">
+                        {isBestSolar && (
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-yellow-500/20 text-yellow-300 font-semibold flex items-center gap-0.5">
+                            <Sun className="w-2.5 h-2.5" /> Best Solar
+                          </span>
+                        )}
                         {isBestEnergy && (
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold flex items-center gap-0.5">
-                            <Zap className="w-2.5 h-2.5" /> Lowest Wh
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-semibold flex items-center gap-0.5">
+                            <Zap className="w-2.5 h-2.5" /> Low Wh
                           </span>
                         )}
                         {isSafest && (
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-300 font-semibold flex items-center gap-0.5">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 font-semibold flex items-center gap-0.5">
                             <ShieldCheck className="w-2.5 h-2.5" /> Safest
                           </span>
                         )}
                         {isShortest && (
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-semibold flex items-center gap-0.5">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-semibold flex items-center gap-0.5">
                             <TrendingDown className="w-2.5 h-2.5" /> Shortest
                           </span>
                         )}
                         {isFastest && (
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold flex items-center gap-0.5">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold flex items-center gap-0.5">
                             <Clock className="w-2.5 h-2.5" /> Fastest
                           </span>
                         )}
@@ -230,15 +237,27 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
 
                       {/* Metrics Table */}
                       {item && item.success ? (
-                        <div className="space-y-1.5 pt-2 border-t border-slate-800 text-[11px]">
+                        <div className="space-y-1 pt-1.5 border-t border-slate-800 text-[10.5px]">
                           <div className="flex justify-between">
                             <span className="text-slate-500">Distance:</span>
                             <span className="text-cyan-300 font-bold">{item.distanceMeters} m</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Energy:</span>
-                            <span className="text-emerald-300 font-bold">{item.estimatedEnergyWh} Wh</span>
+                            <span className="text-slate-500">Consumed:</span>
+                            <span className="text-amber-300 font-bold">{item.estimatedEnergyWh} Wh</span>
                           </div>
+                          {item.solarEnergyGeneratedWh !== undefined && (
+                            <div className="flex justify-between">
+                              <span className="text-yellow-400">Solar Gen:</span>
+                              <span className="text-yellow-300 font-bold">+{item.solarEnergyGeneratedWh} Wh</span>
+                            </div>
+                          )}
+                          {item.netEnergyWh !== undefined && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">Net Energy:</span>
+                              <span className="text-emerald-300 font-bold">{item.netEnergyWh} Wh</span>
+                            </div>
+                          )}
                           <div className="flex justify-between">
                             <span className="text-slate-500">Battery Rem.:</span>
                             <span className={`font-bold ${item.batteryRemainingPct < 20 ? 'text-red-400' : 'text-slate-200'}`}>
@@ -246,19 +265,13 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Travel Time:</span>
+                            <span className="text-slate-500">Time:</span>
                             <span className="text-amber-300 font-bold">{item.estimatedTravelTimeSeconds} s</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-500">Max Slope:</span>
                             <span className={`font-bold ${item.maxSlopeDeg >= 20 ? 'text-rose-400' : 'text-slate-200'}`}>
                               {item.maxSlopeDeg}°
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">Risk Score:</span>
-                            <span className={`font-bold ${item.riskScore > 50 ? 'text-rose-400' : 'text-slate-200'}`}>
-                              {item.riskScore}/100
                             </span>
                           </div>
                         </div>
@@ -272,14 +285,14 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                     {/* Deploy Button */}
                     <button
                       onClick={() => handleSelectStrategy(strat)}
-                      className={`w-full mt-3 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`w-full mt-2.5 py-1.5 px-2 rounded-lg text-[10.5px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                         isCurrent
                           ? 'bg-cyan-500 text-black shadow-md shadow-cyan-950 font-black'
                           : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700'
                       }`}
                     >
-                      <span>{isCurrent ? 'Active Route' : 'Select Route'}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <span>{isCurrent ? 'Active Route' : 'Select'}</span>
+                      <ArrowRight className="w-3 h-3" />
                     </button>
                   </div>
                 );
@@ -301,10 +314,11 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                       <th className="py-2 px-3">Strategy</th>
                       <th className="py-2 px-3 text-cyan-400">Distance (w_dist)</th>
                       <th className="py-2 px-3 text-emerald-400">Energy (w_energy)</th>
+                      <th className="py-2 px-3 text-yellow-400">Solar (w_solar)</th>
                       <th className="py-2 px-3 text-rose-400">Slope (w_slope)</th>
                       <th className="py-2 px-3 text-blue-400">Risk (w_risk)</th>
                       <th className="py-2 px-3 text-amber-400">Time (w_time)</th>
-                      <th className="py-2 px-3">Optimal For</th>
+                      <th className="py-2 px-3">Optimal Traversal Focus</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -319,6 +333,7 @@ export const StrategyComparisonModal: React.FC<StrategyComparisonModalProps> = (
                           </td>
                           <td className="py-2.5 px-3 text-cyan-300 font-bold">{w.distance.toFixed(1)}</td>
                           <td className="py-2.5 px-3 text-emerald-300 font-bold">{w.energy.toFixed(1)}</td>
+                          <td className="py-2.5 px-3 text-yellow-300 font-bold">{(w.solar ?? 0.0).toFixed(1)}</td>
                           <td className="py-2.5 px-3 text-rose-300 font-bold">{w.slope.toFixed(1)}</td>
                           <td className="py-2.5 px-3 text-blue-300 font-bold">{w.risk.toFixed(1)}</td>
                           <td className="py-2.5 px-3 text-amber-300 font-bold">{w.time.toFixed(1)}</td>

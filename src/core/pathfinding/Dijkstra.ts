@@ -103,7 +103,7 @@ export class DijkstraPathfinder implements IPathfinder {
         if (offset.isDiag && offset.adj1 && offset.adj2) {
           const adj1 = grid.cells[current.y + offset.adj1.dy][current.x + offset.adj1.dx];
           const adj2 = grid.cells[current.y + offset.adj2.dy][current.x + offset.adj2.dx];
-          if (isCellBlocked(adj1, options) && isCellBlocked(adj2, options)) continue;
+          if (isCellBlocked(adj1, options) || isCellBlocked(adj2, options)) continue;
         }
 
         const { totalCost: stepCost } = calculateMultiObjectiveTransitionCost(
@@ -203,6 +203,11 @@ export class DijkstraPathfinder implements IPathfinder {
       computeTimeMs: Number(executionTimeMs.toFixed(2)),
       success: true,
       estimatedEnergyWh: metrics.estimatedEnergyWh,
+      solarEnergyGeneratedWh: metrics.solarEnergyGeneratedWh,
+      netEnergyWh: metrics.netEnergyWh,
+      minimumBatteryPct: metrics.minimumBatteryPct,
+      timeInIlluminationSeconds: metrics.timeInIlluminationSeconds,
+      timeInShadowSeconds: metrics.timeInShadowSeconds,
       estimatedTravelTimeSeconds: metrics.estimatedTravelTimeSeconds,
       averageSlopeDeg: metrics.averageSlopeDeg,
       maxSlopeDeg: metrics.maxSlopeDeg,
@@ -232,6 +237,11 @@ export class DijkstraPathfinder implements IPathfinder {
       success: false,
       failureReason: reason,
       estimatedEnergyWh: 0,
+      solarEnergyGeneratedWh: 0,
+      netEnergyWh: 0,
+      minimumBatteryPct: 100,
+      timeInIlluminationSeconds: 0,
+      timeInShadowSeconds: 0,
       estimatedTravelTimeSeconds: 0,
       averageSlopeDeg: 0,
       maxSlopeDeg: 0,

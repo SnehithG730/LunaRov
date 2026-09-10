@@ -1,5 +1,6 @@
 import { TerrainGrid, TerrainCell, TerrainType, CraterSpec, BoulderSpec, ObstacleToggles } from '@/types/terrain';
 import { Noise2D, createRNG } from '@/lib/math';
+import { SolarModel } from '@/core/rover/SolarModel';
 import {
   DEFAULT_GRID_SIZE,
   CELL_RESOLUTION_METERS,
@@ -53,51 +54,51 @@ export class TerrainGenerator {
         break;
 
       case 'CRATER_FIELD':
-        baseAmplitude = 10;
+        baseAmplitude = 8;
         octaves = 3;
-        frequency = 0.04;
+        frequency = 0.035;
         roughnessBias = 1.2;
         if (!options.craters) {
-          const count = 7 + Math.floor(rng() * 4);
+          const count = 6 + Math.floor(rng() * 4);
           for (let i = 0; i < count; i++) {
-            const rad = 3 + rng() * 7;
+            const rad = 3 + rng() * 6;
             craters.push({
               x: 6 + rng() * (width - 12),
               y: 6 + rng() * (height - 12),
               radius: rad,
-              depth: 6 + rad * 1.8,
-              rimHeight: 1.5 + rad * 0.5,
+              depth: 4 + rad * 1.2,
+              rimHeight: 1.0 + rad * 0.3,
             });
           }
         }
         break;
 
       case 'ROCKY':
-        baseAmplitude = 14;
-        octaves = 5;
-        frequency = 0.08;
-        roughnessBias = 1.6;
+        baseAmplitude = 10;
+        octaves = 4;
+        frequency = 0.05;
+        roughnessBias = 1.4;
         if (!options.boulders) {
-          const count = 30 + Math.floor(rng() * 20);
+          const count = 25 + Math.floor(rng() * 15);
           for (let i = 0; i < count; i++) {
             boulders.push({
               x: 4 + rng() * (width - 8),
               y: 4 + rng() * (height - 8),
-              radius: 1.0 + rng() * 1.8,
-              height: 2.0 + rng() * 3.5,
+              radius: 1.0 + rng() * 1.5,
+              height: 1.8 + rng() * 2.5,
             });
           }
         }
         if (!options.craters) {
           craters.push(
-            { x: Math.floor(width * 0.5), y: Math.floor(height * 0.3), radius: 6, depth: 8, rimHeight: 2 }
+            { x: Math.floor(width * 0.5), y: Math.floor(height * 0.3), radius: 5, depth: 5, rimHeight: 1.5 }
           );
         }
         break;
 
       case 'HILLY':
-        baseAmplitude = 35;
-        octaves = 4;
+        baseAmplitude = 14;
+        octaves = 3;
         frequency = 0.035;
         roughnessBias = 1.1;
         if (!options.craters) {
@@ -109,23 +110,23 @@ export class TerrainGenerator {
 
       case 'SOUTH_POLE':
         // Extreme Shackleton-inspired crater rim and deep permanently shadowed bowl
-        baseAmplitude = 50;
-        octaves = 5;
+        baseAmplitude = 12;
+        octaves = 3;
         frequency = 0.025;
-        roughnessBias = 1.4;
+        roughnessBias = 1.3;
         if (!options.craters) {
           // Dominant south pole crater rim feature
           craters.push(
-            { x: Math.floor(width * 0.45), y: Math.floor(height * 0.5), radius: 16, depth: 45, rimHeight: 12 },
-            { x: Math.floor(width * 0.8), y: Math.floor(height * 0.2), radius: 6, depth: 15, rimHeight: 4 }
+            { x: Math.floor(width * 0.45), y: Math.floor(height * 0.5), radius: 13, depth: 16, rimHeight: 4.0 },
+            { x: Math.floor(width * 0.8), y: Math.floor(height * 0.2), radius: 6, depth: 7, rimHeight: 2.0 }
           );
           // Boulder debris along ejecta blanket
-          for (let i = 0; i < 20; i++) {
+          for (let i = 0; i < 16; i++) {
             boulders.push({
               x: 8 + rng() * (width - 16),
               y: 8 + rng() * (height - 16),
               radius: 1.2 + rng() * 1.5,
-              height: 2.5 + rng() * 3.0,
+              height: 2.2 + rng() * 2.5,
             });
           }
         }
@@ -202,7 +203,17 @@ export class TerrainGenerator {
       }
     }
 
-    // Step 2: Compute slopes, roughness, obstacle status, and cost matrix
+    // Step 2: Compute slopes, roughness, obstacle status, and solar illumination matrix
+    const sunAzimuthDeg = 45;
+    const sunElevationDeg = type === 'SOUTH_POLE' ? 2.5 : (type === 'HILLY' ? 8.0 : 15.0);
+    const illuminationMatrix = SolarModel.computeTerrainIllumination(
+      elevations,
+      resolution,
+      sunAzimuthDeg,
+      sunElevationDeg,
+      type
+    );
+
     const cells: TerrainCell[][] = [];
 
     for (let y = 0; y < height; y++) {
@@ -257,6 +268,8 @@ export class TerrainGenerator {
           cost = 1.0 + Math.max(0, slopeCost) + Math.max(0, roughnessCost);
         }
 
+        const cellIllumination = illuminationMatrix[y]?.[x] ?? 1.0;
+
         cells[y][x] = {
           x,
           y,
@@ -266,6 +279,7 @@ export class TerrainGenerator {
           isObstacle: isImpassable,
           cost: cost === Infinity ? Infinity : Number(cost.toFixed(2)),
           discovered: true, // Initial full visibility, sensor cone updates real-time scan
+          illumination: cellIllumination,
         };
       }
     }
@@ -279,6 +293,8 @@ export class TerrainGenerator {
       seed,
       minElevation: Number(minElevation.toFixed(1)),
       maxElevation: Number(maxElevation.toFixed(1)),
+      sunAzimuthDeg,
+      sunElevationDeg,
     };
   }
 }

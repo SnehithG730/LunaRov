@@ -10,6 +10,8 @@ export interface RoverConfig {
   sensorRangeMeters: number;  // LiDAR obstacle detection distance
   sensorFovDeg: number;       // Sensor field-of-view angle (e.g., 90°)
   movementEfficiency: number; // Mechanical efficiency multiplier (0.5 to 2.0, 1.0 = standard)
+  solarCapacityWatts?: number;      // Maximum solar array generation at 1.0 illumination (W, default 150W)
+  minimumBatteryReservePct?: number;// Safety floor threshold for low battery warnings (%, default 20%)
 }
 
 import { Point2D } from './pathfinding';
@@ -39,6 +41,13 @@ export interface RoverState {
   goalReached: boolean;       // Target destination achieved
   mode: 'AUTONOMOUS' | 'MANUAL';
   activeAlert?: string;       // Active mission alert string if any
+  currentSolarPowerWatts?: number;    // Current instantaneous solar generation (W)
+  totalSolarEnergyGeneratedWh?: number;// Cumulative solar energy gained (Wh)
+  totalEnergyConsumedWh?: number;      // Cumulative gross energy consumed (Wh)
+  netEnergyWh?: number;                // Cumulative net energy balance (Wh = consumed - generated)
+  timeInIlluminationSeconds?: number;  // Seconds spent under illumination > 0.3
+  timeInShadowSeconds?: number;        // Seconds spent under deep shadow <= 0.3
+  minimumBatteryRecordedPct?: number;  // Lowest battery percentage reached during run
 }
 
 export interface TelemetryPoint {
@@ -52,4 +61,8 @@ export interface TelemetryPoint {
   slopeDeg: number;
   powerDrawWatts: number;
   headingDeg: number;
+  solarPowerWatts?: number;
+  netPowerWatts?: number;
+  illumination?: number;
 }
+

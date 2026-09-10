@@ -26,6 +26,7 @@ import {
   Download,
   FileSpreadsheet,
   Check,
+  Sun,
 } from 'lucide-react';
 
 interface MissionResultsViewProps {
@@ -64,6 +65,10 @@ export const MissionResultsView: React.FC<MissionResultsViewProps> = ({
   const batteryRemainingPct = missionResults?.remainingBatteryPct ?? roverState.batteryPercentage;
   const batteryRemainingWh = roverState.batteryRemainingWh;
   const batteryConsumedWh = missionResults?.energyConsumedWh ?? Math.max(0, roverConfig.batteryCapacityWh - batteryRemainingWh);
+  const solarGeneratedWh = missionResults?.solarEnergyGeneratedWh ?? Number((roverState.totalSolarEnergyGeneratedWh ?? 0).toFixed(1));
+  const netEnergyWh = missionResults?.netEnergyWh ?? Number((roverState.netEnergyWh ?? 0).toFixed(1));
+  const sunTimeSec = missionResults?.timeInIlluminationSeconds ?? Number((roverState.timeInIlluminationSeconds ?? 0).toFixed(1));
+  const shadowTimeSec = missionResults?.timeInShadowSeconds ?? Number((roverState.timeInShadowSeconds ?? 0).toFixed(1));
   const pathCost = pathResult?.totalMovementCost ?? distanceTravelled * 1.2;
   const nodesEvaluated = pathResult?.nodesEvaluated ?? pathResult?.nodesExploredCount ?? 840;
   const efficiencyScore = missionResults?.efficiencyScore ?? Math.max(60, Math.min(100, Math.round(100 - (batteryConsumedWh / roverConfig.batteryCapacityWh) * 40 - rerouteCount * 5)));
@@ -297,6 +302,42 @@ export const MissionResultsView: React.FC<MissionResultsViewProps> = ({
           </div>
           <div className="text-xl font-extrabold text-emerald-300">{efficiencyScore}% <span className="text-xs font-normal">({grade.grade})</span></div>
           <div className="text-[9.5px] text-gray-500">Optimal route deviation: 0%</div>
+        </div>
+
+        {/* Solar Energy Generated */}
+        <div className="bg-[#0a0f1d] border border-amber-950/90 p-3.5 rounded-xl space-y-1">
+          <div className="flex items-center gap-1.5 text-yellow-400 text-[10.5px]">
+            <Sun className="w-3.5 h-3.5 text-yellow-400" />
+            <span>SOLAR HARVESTED</span>
+          </div>
+          <div className="text-xl font-extrabold text-yellow-300">+{solarGeneratedWh.toFixed(1)} <span className="text-xs font-normal">Wh</span></div>
+          <div className="text-[9.5px] text-gray-500">Peak Array: {roverConfig.solarCapacityWatts ?? 250}W</div>
+        </div>
+
+        {/* Net Energy Balance */}
+        <div className="bg-[#0a0f1d] border border-cyan-950/90 p-3.5 rounded-xl space-y-1">
+          <div className="flex items-center gap-1.5 text-gray-400 text-[10.5px]">
+            <Zap className="w-3.5 h-3.5 text-emerald-400" />
+            <span>NET ENERGY DRAW</span>
+          </div>
+          <div className={`text-xl font-extrabold ${netEnergyWh <= 0 ? 'text-emerald-300' : 'text-slate-200'}`}>
+            {netEnergyWh.toFixed(1)} <span className="text-xs font-normal">Wh</span>
+          </div>
+          <div className="text-[9.5px] text-gray-500">Consumed - Solar Gen</div>
+        </div>
+
+        {/* Sun vs Shadow Exposure */}
+        <div className="bg-[#0a0f1d] border border-cyan-950/90 p-3.5 rounded-xl space-y-1">
+          <div className="flex items-center gap-1.5 text-gray-400 text-[10.5px]">
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>LIGHT EXPOSURE</span>
+          </div>
+          <div className="text-sm font-extrabold text-white">
+            <span className="text-yellow-300">{sunTimeSec.toFixed(0)}s Sun</span> / <span className="text-blue-300">{shadowTimeSec.toFixed(0)}s Shadow</span>
+          </div>
+          <div className="text-[9.5px] text-gray-500">
+            {((sunTimeSec / Math.max(0.1, sunTimeSec + shadowTimeSec)) * 100).toFixed(0)}% Illuminated
+          </div>
         </div>
 
         {/* Nodes Evaluated */}

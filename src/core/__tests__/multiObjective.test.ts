@@ -24,6 +24,7 @@ function createTestGrid(width: number, height: number, resolution = 2.0): Terrai
         cost: 1.0,
         isObstacle: false,
         discovered: true,
+        illumination: 1.0,
         terrainType: 'MARE' as const,
       });
     }
@@ -172,10 +173,11 @@ console.log('  ✓ Verified: Balanced strategy computed stable intermediate comp
 // TEST 5: Battery Exhaustion & Mission Feasibility Evaluation
 // =========================================================================
 console.log('[TEST 5] Verifying Battery Feasibility Classification...');
-// Low battery config: 1.5 Wh (route requires ~2.1 Wh)
+// Low battery config: 1.5 Wh without solar (route requires ~2.1 Wh)
 const tinyBatteryRover = {
   ...DEFAULT_ROVER_CONFIG,
   batteryCapacityWh: 1.5,
+  solarCapacityWatts: 0,
 };
 
 const infeasibleRes = solver.findPath(naturalGrid, nStart, nTarget, {

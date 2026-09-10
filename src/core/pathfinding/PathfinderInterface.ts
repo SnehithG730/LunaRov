@@ -15,6 +15,7 @@ import {
 import { RoverConfig } from '@/types/rover';
 import { DEFAULT_ROVER_CONFIG } from '@/lib/constants';
 import { EnergyModel } from '@/core/rover/EnergyModel';
+import { SolarModel } from '@/core/rover/SolarModel';
 
 export interface IPathfinder {
   findPath(
@@ -58,25 +59,21 @@ export function resolveCellCost(
   options?: PathfindingOptions
 ): number {
   if (isCellBlocked(cell, options)) {
-    return options?.movementCosts?.crater ?? DEFAULT_MOVEMENT_COSTS.crater;
+    return Infinity;
   }
 
-  const costs = {
-    ...DEFAULT_MOVEMENT_COSTS,
-    ...options?.movementCosts,
-  };
+  const costs = { ...DEFAULT_MOVEMENT_COSTS, ...options?.movementCosts };
 
-  // Danger zone: slope >= 22° or danger terrain
+  if (cell.cost && cell.cost !== 1.0) {
+    return cell.cost;
+  }
+
   if (cell.slope >= 22.0) {
     return costs.danger;
   }
-
-  // Slope: slope >= 12°
-  if (cell.slope >= 12.0) {
+  if (cell.slope >= 15.0) {
     return costs.slope;
   }
-
-  // Rock: roughness > 1.3
   if (cell.roughness > 1.3) {
     return costs.rock;
   }
@@ -135,7 +132,7 @@ export function calculateMultiObjectiveTransitionCost(
   const uphillFactor = deltaElev > 0 ? (deltaElev / resolution) * 1.5 : 0;
   const slopeCost = (slopeRatio * slopeRatio * 3.5 + uphillFactor) * offsetCost;
 
-  // 3. Energy Cost: power draw relative to flat baseline
+  // 3. Energy Cost: gross power draw relative to flat baseline
   const cruiseSpeed = roverConfig.maxSpeed * 0.75;
   const basePowerWatts = EnergyModel.calculatePowerDrawWatts(roverConfig, cruiseSpeed, 0, 1.0);
   const directionalSlope = (Math.atan2(deltaElev, horizontalDist) * 180) / Math.PI;
@@ -145,7 +142,19 @@ export function calculateMultiObjectiveTransitionCost(
     directionalSlope,
     toCell.roughness
   );
-  const energyCost = (stepPowerWatts / Math.max(10, basePowerWatts)) * offsetCost;
+
+  // Solar illumination factor at transition
+  const fromIllum = fromCell.illumination ?? 0.8;
+  const toIllum = toCell.illumination ?? 0.8;
+  const stepIllum = (fromIllum + toIllum) / 2;
+  const solarPowerWatts = SolarModel.calculateSolarPowerWatts(roverConfig, stepIllum);
+  const netPowerWatts = Math.max(5, stepPowerWatts - solarPowerWatts * 0.75);
+
+  const energyCost = (netPowerWatts / Math.max(10, basePowerWatts)) * offsetCost;
+
+  // Solar Shadow Cost (penalizes cold shadow / PSR traversal, rewards sunlit ridge transit)
+  const solarCost = (1.0 - stepIllum) * 3.0 * offsetCost;
+  const solarReward = stepIllum * 2.0 * offsetCost;
 
   // 4. Hazard / Risk Cost
   let riskFactor = 0;
@@ -176,12 +185,14 @@ export function calculateMultiObjectiveTransitionCost(
   const timeCost = (1.0 / terrainSpeedFactor) * offsetCost;
 
   // Weighted Total
+  const solarWeight = weights.solar ?? 0;
   const totalWeightedCost =
     weights.distance * distanceCost +
     weights.energy * energyCost +
     weights.slope * slopeCost +
     weights.risk * riskCost +
-    weights.time * timeCost;
+    weights.time * timeCost +
+    solarWeight * solarCost;
 
   return {
     totalCost: totalWeightedCost,
@@ -191,6 +202,8 @@ export function calculateMultiObjectiveTransitionCost(
       slopeCost: Number(slopeCost.toFixed(3)),
       riskCost: Number(riskCost.toFixed(3)),
       timeCost: Number(timeCost.toFixed(3)),
+      solarCost: Number(solarCost.toFixed(3)),
+      solarReward: Number(solarReward.toFixed(3)),
       totalWeightedCost: Number(totalWeightedCost.toFixed(3)),
     },
   };
@@ -209,6 +222,11 @@ export function computeMultiObjectiveMetrics(
   totalDistanceMeters: number;
   totalMovementCost: number;
   estimatedEnergyWh: number;
+  solarEnergyGeneratedWh: number;
+  netEnergyWh: number;
+  minimumBatteryPct: number;
+  timeInIlluminationSeconds: number;
+  timeInShadowSeconds: number;
   estimatedTravelTimeSeconds: number;
   averageSlopeDeg: number;
   maxSlopeDeg: number;
@@ -224,6 +242,11 @@ export function computeMultiObjectiveMetrics(
       totalDistanceMeters: 0,
       totalMovementCost: 0,
       estimatedEnergyWh: 0,
+      solarEnergyGeneratedWh: 0,
+      netEnergyWh: 0,
+      minimumBatteryPct: 100,
+      timeInIlluminationSeconds: 0,
+      timeInShadowSeconds: 0,
       estimatedTravelTimeSeconds: 0,
       averageSlopeDeg: 0,
       maxSlopeDeg: 0,
@@ -236,6 +259,8 @@ export function computeMultiObjectiveMetrics(
         slopeCost: 0,
         riskCost: 0,
         timeCost: 0,
+        solarCost: 0,
+        solarReward: 0,
         totalWeightedCost: 0,
       },
       segments: [],
@@ -245,7 +270,10 @@ export function computeMultiObjectiveMetrics(
   let totalDist = 0;
   let totalCostSum = 0;
   let totalEnergyWh = 0;
+  let totalSolarWh = 0;
   let totalTimeSec = 0;
+  let totalSunSec = 0;
+  let totalShadowSec = 0;
   let slopeSum = 0;
   let maxSlope = 0;
   let totalRiskAcc = 0;
@@ -257,8 +285,13 @@ export function computeMultiObjectiveMetrics(
     slopeCost: 0,
     riskCost: 0,
     timeCost: 0,
+    solarCost: 0,
+    solarReward: 0,
     totalWeightedCost: 0,
   };
+
+  let simulatedBatteryWh = roverConfig.batteryCapacityWh;
+  let minBatteryRecordedWh = roverConfig.batteryCapacityWh;
 
   for (let i = 0; i < path.length - 1; i++) {
     const p1 = path[i];
@@ -301,6 +334,8 @@ export function computeMultiObjectiveMetrics(
     sumBreakdown.slopeCost += breakdown.slopeCost;
     sumBreakdown.riskCost += breakdown.riskCost;
     sumBreakdown.timeCost += breakdown.timeCost;
+    sumBreakdown.solarCost = (sumBreakdown.solarCost || 0) + (breakdown.solarCost || 0);
+    sumBreakdown.solarReward = (sumBreakdown.solarReward || 0) + (breakdown.solarReward || 0);
     sumBreakdown.totalWeightedCost += breakdown.totalWeightedCost;
 
     // Segment speed and energy
@@ -312,6 +347,13 @@ export function computeMultiObjectiveMetrics(
     const segDurationSec = stepDist3D / segSpeed;
     totalTimeSec += segDurationSec;
 
+    const stepIllum = ((c1.illumination ?? 0.8) + (c2.illumination ?? 0.8)) / 2;
+    if (stepIllum > 0.3) {
+      totalSunSec += segDurationSec;
+    } else {
+      totalShadowSec += segDurationSec;
+    }
+
     const directionalSlope = (Math.atan2(dz, horizDist) * 180) / Math.PI;
     const powerWatts = EnergyModel.calculatePowerDrawWatts(
       roverConfig,
@@ -321,6 +363,19 @@ export function computeMultiObjectiveMetrics(
     );
     const segEnergyWh = EnergyModel.calculateEnergyDrainWh(powerWatts, segDurationSec);
     totalEnergyWh += segEnergyWh;
+
+    const solarPowerWatts = SolarModel.calculateSolarPowerWatts(roverConfig, stepIllum);
+    const segSolarWh = (solarPowerWatts * segDurationSec) / 3600;
+    totalSolarWh += segSolarWh;
+
+    // Continuous simulated battery state along trajectory (clamped at capacity)
+    simulatedBatteryWh = Math.min(
+      roverConfig.batteryCapacityWh,
+      Math.max(0, simulatedBatteryWh - segEnergyWh + segSolarWh)
+    );
+    if (simulatedBatteryWh < minBatteryRecordedWh) {
+      minBatteryRecordedWh = simulatedBatteryWh;
+    }
 
     let segRisk = 0;
     if (effSlope >= 22.0) segRisk += 30;
@@ -346,23 +401,31 @@ export function computeMultiObjectiveMetrics(
     Math.round((totalRiskAcc / segmentCount) * 2.5 + (maxSlope >= 22 ? 25 : 0))
   );
 
-  const batteryRemainingWh = roverConfig.batteryCapacityWh - totalEnergyWh;
+  const netEnergyWh = Number((totalEnergyWh - totalSolarWh).toFixed(1));
   const batteryRemainingPct = Number(
-    Math.max(0, Math.min(100, (batteryRemainingWh / roverConfig.batteryCapacityWh) * 100)).toFixed(1)
+    Math.max(0, Math.min(100, (simulatedBatteryWh / roverConfig.batteryCapacityWh) * 100)).toFixed(1)
   );
+  const minimumBatteryPct = Number(
+    Math.max(0, Math.min(100, (minBatteryRecordedWh / roverConfig.batteryCapacityWh) * 100)).toFixed(1)
+  );
+
+  const minReserveThresholdPct = roverConfig.minimumBatteryReservePct ?? 20.0;
 
   let feasibility: MissionFeasibility = 'FEASIBLE';
   let feasibilityWarning: string | undefined = undefined;
 
-  if (totalEnergyWh > roverConfig.batteryCapacityWh) {
+  if (minBatteryRecordedWh <= 0.01 || netEnergyWh > roverConfig.batteryCapacityWh || ((roverConfig.solarCapacityWatts ?? 0) === 0 && totalEnergyWh > roverConfig.batteryCapacityWh)) {
     feasibility = 'INFEASIBLE';
-    feasibilityWarning = `Mission requires ${totalEnergyWh.toFixed(1)} Wh but rover capacity is only ${roverConfig.batteryCapacityWh} Wh. Battery will deplete before target.`;
+    feasibilityWarning = `Mission requires ${totalEnergyWh.toFixed(1)} Wh (Net: ${netEnergyWh} Wh) on a ${roverConfig.batteryCapacityWh} Wh battery. Battery will deplete to 0% before target.`;
   } else if (maxSlope >= 25.0) {
     feasibility = 'INFEASIBLE';
     feasibilityWarning = `Path crosses extreme hazard zone with ${maxSlope.toFixed(1)}° slope exceeding safety limits.`;
-  } else if (totalEnergyWh > roverConfig.batteryCapacityWh * 0.8) {
+  } else if (minimumBatteryPct < minReserveThresholdPct) {
     feasibility = 'WARNING';
-    feasibilityWarning = `High energy route: ${totalEnergyWh.toFixed(1)} Wh consumes ${((totalEnergyWh / roverConfig.batteryCapacityWh) * 100).toFixed(0)}% of total battery reserve.`;
+    feasibilityWarning = `Reserve violation: Minimum battery drops to ${minimumBatteryPct}%, below the ${minReserveThresholdPct}% safety floor. Recommend Solar-Optimized route.`;
+  } else if (netEnergyWh > roverConfig.batteryCapacityWh * 0.75) {
+    feasibility = 'WARNING';
+    feasibilityWarning = `High net energy route: Net ${netEnergyWh} Wh consumes ${((netEnergyWh / roverConfig.batteryCapacityWh) * 100).toFixed(0)}% of battery capacity.`;
   } else if (maxSlope >= 20.0) {
     feasibility = 'WARNING';
     feasibilityWarning = `Elevated pitch risk: encounters ${maxSlope.toFixed(1)}° slopes requiring maximum tractive torque.`;
@@ -372,6 +435,11 @@ export function computeMultiObjectiveMetrics(
     totalDistanceMeters: Number(totalDist.toFixed(2)),
     totalMovementCost: Number(totalCostSum.toFixed(2)),
     estimatedEnergyWh: Number(totalEnergyWh.toFixed(1)),
+    solarEnergyGeneratedWh: Number(totalSolarWh.toFixed(1)),
+    netEnergyWh,
+    minimumBatteryPct,
+    timeInIlluminationSeconds: Number(totalSunSec.toFixed(1)),
+    timeInShadowSeconds: Number(totalShadowSec.toFixed(1)),
     estimatedTravelTimeSeconds: Number(totalTimeSec.toFixed(1)),
     averageSlopeDeg: avgSlope,
     maxSlopeDeg: Number(maxSlope.toFixed(1)),
@@ -385,6 +453,8 @@ export function computeMultiObjectiveMetrics(
       slopeCost: Number(sumBreakdown.slopeCost.toFixed(2)),
       riskCost: Number(sumBreakdown.riskCost.toFixed(2)),
       timeCost: Number(sumBreakdown.timeCost.toFixed(2)),
+      solarCost: Number((sumBreakdown.solarCost || 0).toFixed(2)),
+      solarReward: Number((sumBreakdown.solarReward || 0).toFixed(2)),
       totalWeightedCost: Number(sumBreakdown.totalWeightedCost.toFixed(2)),
     },
     segments,

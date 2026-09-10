@@ -32,7 +32,14 @@ export interface MissionResults {
   durationSeconds: number;
   distanceTraveledMeters: number;
   energyConsumedWh: number;
+  solarEnergyGeneratedWh?: number;
+  netEnergyWh?: number;
   remainingBatteryPct: number;
+  minimumBatteryPct?: number;
+  timeInIlluminationSeconds?: number;
+  timeInShadowSeconds?: number;
+  energyEfficiencyWhPerMeter?: number;
+  solarOffsetPct?: number;
   averageSpeedMps: number;
   maxSlopeEncounteredDeg: number;
   rerouteCount: number;

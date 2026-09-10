@@ -24,7 +24,7 @@ export class StrategyComparator {
     start: Point2D,
     target: Point2D,
     options: PathfindingOptions = {},
-    strategies: OptimizationStrategy[] = ['SHORTEST', 'MIN_ENERGY', 'SAFEST', 'FASTEST', 'BALANCED']
+    strategies: OptimizationStrategy[] = ['SHORTEST', 'MIN_ENERGY', 'SAFEST', 'FASTEST', 'BALANCED', 'SOLAR_OPTIMIZED']
   ): StrategyComparisonResult {
     const results: Record<OptimizationStrategy, PathfindingResult | null> = {
       SHORTEST: null,
@@ -32,6 +32,7 @@ export class StrategyComparator {
       SAFEST: null,
       FASTEST: null,
       BALANCED: null,
+      SOLAR_OPTIMIZED: null,
       CUSTOM: null,
     };
 
@@ -58,6 +59,11 @@ export class StrategyComparator {
         name: STRATEGY_METADATA[strat]?.label || strat,
         distanceMeters: res.totalDistanceMeters,
         estimatedEnergyWh: res.estimatedEnergyWh,
+        solarEnergyGeneratedWh: res.solarEnergyGeneratedWh,
+        netEnergyWh: res.netEnergyWh,
+        minimumBatteryPct: res.minimumBatteryPct,
+        timeInIlluminationSeconds: res.timeInIlluminationSeconds,
+        timeInShadowSeconds: res.timeInShadowSeconds,
         estimatedTravelTimeSeconds: res.estimatedTravelTimeSeconds,
         averageSlopeDeg: res.averageSlopeDeg,
         maxSlopeDeg: res.maxSlopeDeg,
@@ -75,6 +81,7 @@ export class StrategyComparator {
     const successfulRuns = comparisons.filter((c) => c.success && c.path.length > 0);
 
     let lowestEnergyStrategy: OptimizationStrategy | undefined;
+    let bestSolarStrategy: OptimizationStrategy | undefined;
     let safestStrategy: OptimizationStrategy | undefined;
     let shortestDistanceStrategy: OptimizationStrategy | undefined;
     let fastestStrategy: OptimizationStrategy | undefined;
@@ -82,6 +89,7 @@ export class StrategyComparator {
 
     if (successfulRuns.length > 0) {
       lowestEnergyStrategy = [...successfulRuns].sort((a, b) => a.estimatedEnergyWh - b.estimatedEnergyWh)[0].strategy;
+      bestSolarStrategy = [...successfulRuns].sort((a, b) => (b.solarEnergyGeneratedWh ?? 0) - (a.solarEnergyGeneratedWh ?? 0))[0]?.strategy;
       safestStrategy = [...successfulRuns].sort((a, b) => a.riskScore - b.riskScore || a.maxSlopeDeg - b.maxSlopeDeg)[0].strategy;
       shortestDistanceStrategy = [...successfulRuns].sort((a, b) => a.distanceMeters - b.distanceMeters)[0].strategy;
       fastestStrategy = [...successfulRuns].sort((a, b) => a.estimatedTravelTimeSeconds - b.estimatedTravelTimeSeconds)[0].strategy;
@@ -92,6 +100,7 @@ export class StrategyComparator {
       results,
       comparisons,
       lowestEnergyStrategy,
+      bestSolarStrategy,
       safestStrategy,
       shortestDistanceStrategy,
       fastestStrategy,

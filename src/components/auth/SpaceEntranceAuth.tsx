@@ -15,7 +15,11 @@ import {
   ShieldCheck,
   Globe,
   Compass,
+  KeyRound,
+  UserPlus,
+  LogIn,
 } from 'lucide-react';
+import { SupabaseAuthService } from '@/lib/supabase/client';
 
 export interface AuthUserData {
   name: string;
@@ -43,6 +47,10 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
   onSkip,
 }) => {
   const [phase, setPhase] = useState<AuthPhase>('INITIAL');
+  const [authMode, setAuthMode] = useState<'SIGN_IN' | 'REGISTER'>('SIGN_IN');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRegisteredUser, setIsRegisteredUser] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -61,10 +69,10 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
   const phaseStartTimeRef = useRef<number>(0);
 
   // Validation logic
-  const isNameValid = name.trim().length >= 2;
+  const isNameValid = authMode === 'SIGN_IN' ? true : name.trim().length >= 2;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const isPasswordValid = password.length >= 6;
-  const isFormValid = isNameValid && isEmailValid && isPasswordValid;
+  const isFormValid = isNameValid && isEmailValid && isPasswordValid && !isSubmitting;
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -1070,31 +1078,59 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
     }, 2200);
   };
 
-  // Handle Step 4 -> 5 -> 6 -> 7 -> 8: Submit Form
-  const handleSubmit = (e: React.FormEvent) => {
+  // Handle Step 4 -> 5 -> 6 -> 7 -> 8: Submit Form with Supabase Authentication
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid) return;
+    if (!isFormValid || isSubmitting) return;
 
-    setPhase('AUTHENTICATING');
+    setAuthError(null);
+    setIsSubmitting(true);
 
-    setTimeout(() => {
-      setPhase('LAUNCHING');
+    try {
+      let authResult;
+      if (authMode === 'SIGN_IN') {
+        authResult = await SupabaseAuthService.authenticateUser(email, password);
+      } else {
+        authResult = await SupabaseAuthService.registerUser(name, email, password);
+      }
+
+      if (!authResult.success) {
+        setAuthError(
+          authResult.error ||
+            'ACCESS DENIED: The password entered does not match the password registered for this astronaut email.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Step 5: Holographic Authenticating pulse
+      setPhase('AUTHENTICATING');
 
       setTimeout(() => {
-        setPhase('WARP_TRANSITION');
+        // Step 6: Rocket ignition and launch plume
+        setPhase('LAUNCHING');
 
         setTimeout(() => {
-          const user: AuthUserData = {
-            name: name.trim(),
-            email: email.trim().toLowerCase(),
-            isAuthenticated: true,
-            avatarSeed: name.trim().toLowerCase(),
-            loginTimestamp: Date.now(),
-          };
-          onLoginSuccess(user);
-        }, 3600);
+          // Step 7: Hyperspace warp-speed transition
+          setPhase('WARP_TRANSITION');
+
+          setTimeout(() => {
+            const user: AuthUserData = {
+              name: authResult.user?.fullName || name.trim() || email.split('@')[0],
+              email: authResult.user?.email || email.trim().toLowerCase(),
+              isAuthenticated: true,
+              avatarSeed: authResult.user?.avatarSeed || name.trim().toLowerCase(),
+              loginTimestamp: Date.now(),
+            };
+            onLoginSuccess(user);
+          }, 3600);
+        }, 1800);
       }, 1800);
-    }, 1800);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Authentication system error.';
+      setAuthError(`Authentication error: ${msg}`);
+      setIsSubmitting(false);
+    }
   };
 
   const nameInputId = useId();
@@ -1161,12 +1197,48 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
             <div className="absolute -bottom-9 right-1/4 w-32 h-32 bg-white/90 rounded-full blur-[1px] -z-10 shadow-lg" />
 
             {phase === 'FORM_ACTIVE' && (
-              <div className="text-center mb-6">
+              <div className="text-center mb-5">
+                {/* Mode Selector Tabs */}
+                <div className="inline-flex p-1 bg-slate-200/70 rounded-full border border-cyan-200/80 mb-3 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('SIGN_IN');
+                      setAuthError(null);
+                    }}
+                    className={`flex items-center space-x-1.5 py-1.5 px-4 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                      authMode === 'SIGN_IN'
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>SIGN IN</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('REGISTER');
+                      setAuthError(null);
+                    }}
+                    className={`flex items-center space-x-1.5 py-1.5 px-4 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                      authMode === 'REGISTER'
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>REGISTER</span>
+                  </button>
+                </div>
+
                 <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  Welcome Back
+                  {authMode === 'SIGN_IN' ? 'Mission Sign In' : 'Astronaut Registration'}
                 </h2>
                 <p className="text-xs sm:text-sm font-medium text-cyan-700 font-mono mt-1">
-                  Sign in to continue your journey
+                  {authMode === 'SIGN_IN'
+                    ? 'Enter your registered email and password'
+                    : 'Create your permanent astronaut credentials'}
                 </p>
               </div>
             )}
@@ -1182,7 +1254,7 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                 <div>
                   <h3 className="text-xl font-bold text-slate-900 font-mono">Authenticating...</h3>
                   <p className="text-xs text-slate-600 font-mono mt-1">
-                    Please wait while we verify your details
+                    Verifying credentials with Supabase Database
                   </p>
                 </div>
                 <div className="w-48 h-1.5 bg-slate-200 rounded-full overflow-hidden">
@@ -1190,52 +1262,72 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Field 1: Name */}
-                <div>
-                  <label htmlFor={nameInputId} className="block text-xs font-bold text-slate-700 font-mono mb-1">
-                    Name
-                  </label>
-                  <div className="relative flex items-center">
-                    <User className="absolute left-3.5 w-4 h-4 text-cyan-600" />
-                    <input
-                      id={nameInputId}
-                      type="text"
-                      placeholder="Enter your name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      onBlur={() => setTouched((p) => ({ ...p, name: true }))}
-                      required
-                      className={`w-full pl-10 pr-10 py-3 text-sm font-medium rounded-full bg-cyan-50/70 border-2 transition-all outline-none text-slate-900 placeholder:text-slate-400 ${
-                        touched.name && !isNameValid
-                          ? 'border-red-400 bg-red-50/50'
-                          : isNameValid
-                          ? 'border-emerald-500 bg-white shadow-sm'
-                          : 'border-cyan-200 focus:border-cyan-500 focus:bg-white'
-                      }`}
-                    />
-                    {isNameValid && (
-                      <CheckCircle2 className="absolute right-3.5 w-4 h-4 text-emerald-500" />
-                    )}
-                    {touched.name && !isNameValid && (
-                      <AlertCircle className="absolute right-3.5 w-4 h-4 text-red-500" />
-                    )}
+              <form onSubmit={handleSubmit} className="space-y-3.5">
+                {/* Error Banner */}
+                {authError && (
+                  <div className="p-3.5 rounded-2xl bg-red-50 border-2 border-red-300 text-red-800 text-xs font-mono flex items-start space-x-2.5 animate-shake shadow-md">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 font-semibold leading-relaxed">{authError}</div>
                   </div>
-                </div>
+                )}
+
+                {/* Field 1: Name (Required only for Registration) */}
+                {authMode === 'REGISTER' && (
+                  <div>
+                    <label htmlFor={nameInputId} className="block text-xs font-bold text-slate-700 font-mono mb-1">
+                      Astronaut Name
+                    </label>
+                    <div className="relative flex items-center">
+                      <User className="absolute left-3.5 w-4 h-4 text-cyan-600" />
+                      <input
+                        id={nameInputId}
+                        type="text"
+                        placeholder="Enter your callsign / full name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        onBlur={() => setTouched((p) => ({ ...p, name: true }))}
+                        required={authMode === 'REGISTER'}
+                        className={`w-full pl-10 pr-10 py-3 text-sm font-medium rounded-full bg-cyan-50/70 border-2 transition-all outline-none text-slate-900 placeholder:text-slate-400 ${
+                          touched.name && !isNameValid
+                            ? 'border-red-400 bg-red-50/50'
+                            : isNameValid
+                            ? 'border-emerald-500 bg-white shadow-sm'
+                            : 'border-cyan-200 focus:border-cyan-500 focus:bg-white'
+                        }`}
+                      />
+                      {isNameValid && (
+                        <CheckCircle2 className="absolute right-3.5 w-4 h-4 text-emerald-500" />
+                      )}
+                      {touched.name && !isNameValid && (
+                        <AlertCircle className="absolute right-3.5 w-4 h-4 text-red-500" />
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Field 2: Email */}
                 <div>
                   <label htmlFor={emailInputId} className="block text-xs font-bold text-slate-700 font-mono mb-1">
-                    Email
+                    Email Address
                   </label>
                   <div className="relative flex items-center">
                     <Mail className="absolute left-3.5 w-4 h-4 text-cyan-600" />
                     <input
                       id={emailInputId}
                       type="email"
-                      placeholder="Enter your email"
+                      placeholder="commander@lunarov.space"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setAuthError(null);
+                        const trimmed = e.target.value.trim().toLowerCase();
+                        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+                          const reg = SupabaseAuthService.isEmailRegistered(trimmed);
+                          setIsRegisteredUser(reg);
+                        } else {
+                          setIsRegisteredUser(false);
+                        }
+                      }}
                       onBlur={() => setTouched((p) => ({ ...p, email: true }))}
                       required
                       className={`w-full pl-10 pr-10 py-3 text-sm font-medium rounded-full bg-cyan-50/70 border-2 transition-all outline-none text-slate-900 placeholder:text-slate-400 ${
@@ -1253,21 +1345,30 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                       <AlertCircle className="absolute right-3.5 w-4 h-4 text-red-500" />
                     )}
                   </div>
+                  {isRegisteredUser && authMode === 'SIGN_IN' && (
+                    <div className="text-[11px] font-mono text-cyan-700 flex items-center space-x-1.5 mt-1.5 bg-cyan-100/70 py-1 px-3 rounded-full border border-cyan-300">
+                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-600" />
+                      <span>Account identified in database. Enter your password.</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Field 3: Password */}
                 <div>
                   <label htmlFor={passwordInputId} className="block text-xs font-bold text-slate-700 font-mono mb-1">
-                    Password
+                    Password {authMode === 'REGISTER' && <span className="text-slate-400 font-normal">(min 6 chars)</span>}
                   </label>
                   <div className="relative flex items-center">
                     <Lock className="absolute left-3.5 w-4 h-4 text-cyan-600" />
                     <input
                       id={passwordInputId}
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Enter your password"
+                      placeholder="Enter account password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setAuthError(null);
+                      }}
                       onBlur={() => setTouched((p) => ({ ...p, password: true }))}
                       required
                       className={`w-full pl-10 pr-16 py-3 text-sm font-medium rounded-full bg-cyan-50/70 border-2 transition-all outline-none text-slate-900 placeholder:text-slate-400 ${
@@ -1296,23 +1397,55 @@ export const SpaceEntranceAuth: React.FC<SpaceEntranceAuthProps> = ({
                 {isFormValid && (
                   <div className="flex items-center justify-center space-x-2 py-1.5 px-3 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-semibold animate-fade-in">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>All fields are valid!</span>
+                    <span>Credentials format valid</span>
                   </div>
                 )}
 
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={!isFormValid}
+                  disabled={!isFormValid || isSubmitting}
                   className={`w-full py-3.5 rounded-full font-mono font-bold text-sm tracking-wider flex items-center justify-center space-x-2 transition-all shadow-lg cursor-pointer ${
-                    isFormValid
+                    isFormValid && !isSubmitting
                       ? 'bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-white shadow-cyan-500/50 hover:scale-[1.02] active:scale-[0.98]'
                       : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-75'
                   }`}
                 >
-                  <span>SUBMIT</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isSubmitting ? (
+                    <>
+                      <Orbit className="w-4 h-4 animate-spin" />
+                      <span>AUTHENTICATING...</span>
+                    </>
+                  ) : authMode === 'SIGN_IN' ? (
+                    <>
+                      <LogIn className="w-4 h-4" />
+                      <span>AUTHENTICATE & ENTER</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-4 h-4" />
+                      <span>REGISTER & ENTER</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
+
+                {/* Mode Toggle Link */}
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode(authMode === 'SIGN_IN' ? 'REGISTER' : 'SIGN_IN');
+                      setAuthError(null);
+                    }}
+                    className="text-xs font-mono text-slate-600 hover:text-cyan-600 underline underline-offset-4 cursor-pointer transition-colors"
+                  >
+                    {authMode === 'SIGN_IN'
+                      ? 'New Astronaut? Create a mission account ->'
+                      : 'Already registered? Sign in with your password ->'}
+                  </button>
+                </div>
               </form>
             )}
           </div>

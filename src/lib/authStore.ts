@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { AuthUserData } from '@/components/auth/SpaceEntranceAuth';
+import { SupabaseAuthService } from './supabase/client';
 
 interface AuthState {
   user: AuthUserData | null;
@@ -44,6 +45,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    // Clear Supabase session and local user state
+    SupabaseAuthService.logout().catch(console.warn);
     set({ user: null, hasCheckedStorage: true });
     if (typeof window !== 'undefined') {
       try {

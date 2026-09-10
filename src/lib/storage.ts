@@ -60,6 +60,34 @@ export function saveMissionToStorage(mission: SavedMission): void {
 
     const updated = [compactMission, ...existing.filter((m) => m.id !== compactMission.id)].slice(0, 50);
     localStorage.setItem(STORAGE_KEYS.SAVED_MISSIONS, JSON.stringify(updated));
+
+    // Asynchronously synchronize mission to Supabase Database
+    try {
+      const authUserStr = localStorage.getItem('lunarov_space_user');
+      const email = authUserStr ? JSON.parse(authUserStr).email : 'astronaut@lunarov.space';
+      import('@/lib/supabase/client').then(({ SupabaseDatabaseService }) => {
+        SupabaseDatabaseService.saveMission(email, {
+          id: compactMission.id,
+          name: compactMission.name,
+          date: compactMission.date,
+          terrainType: compactMission.terrainType,
+          algorithm: compactMission.algorithm,
+          start: compactMission.start,
+          target: compactMission.target,
+          roverName: compactMission.roverConfig?.name || 'Lunar Rover',
+          durationSeconds: compactMission.results?.durationSeconds ?? 0,
+          distanceMeters: compactMission.results?.distanceTraveledMeters ?? 0,
+          energyConsumedWh: compactMission.results?.energyConsumedWh ?? 0,
+          efficiencyScore: compactMission.results?.efficiencyScore ?? 0,
+          outcome: compactMission.results?.outcome ?? 'COMPLETED',
+          averageSpeedMps: compactMission.results?.averageSpeedMps,
+          maxSlopeDeg: compactMission.results?.maxSlopeEncounteredDeg,
+          rerouteCount: compactMission.results?.rerouteCount,
+        }).catch(console.warn);
+      });
+    } catch {
+      // Non-blocking sync
+    }
   } catch (err) {
     console.error('Failed to save mission to LocalStorage:', err);
   }

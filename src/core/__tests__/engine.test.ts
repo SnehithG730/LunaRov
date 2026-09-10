@@ -53,3 +53,7 @@ import './pathfinding.test';
 
 // Trigger Rover Simulation Engine Unit Tests
 import './simulationEngine.test';
+
+// Trigger Supabase Database & Authentication Unit Tests
+import './authDatabase.test';
+

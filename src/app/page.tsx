@@ -32,6 +32,13 @@ export default function LandingPage() {
     initializeAuth();
   }, [initializeAuth]);
 
+  // When user logs out, reset hasSkipped so the authentication gate requires password login
+  useEffect(() => {
+    if (!user && hasCheckedStorage) {
+      setHasSkipped(false);
+    }
+  }, [user, hasCheckedStorage]);
+
   // Jump to specific planet waypoint along the pinned track
   const handleScrollToPlanet = useCallback((index: number) => {
     if (!planetTrackRef.current) return;

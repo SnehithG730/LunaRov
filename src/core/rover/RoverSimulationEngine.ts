@@ -1,4 +1,4 @@
-import { RoverConfig, RoverState, TelemetryPoint } from '@/types/rover';
+import { RoverConfig, RoverState, TelemetryPoint, DiscoveryTelemetry } from '@/types/rover';
 import { TerrainGrid, TerrainCell } from '@/types/terrain';
 import { Point2D, AlgorithmType, ReplanTelemetry } from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent } from '@/types/mission';
@@ -6,6 +6,7 @@ import { RoverKinematics } from './RoverKinematics';
 import { EnergyModel } from './EnergyModel';
 import { CollisionSystem, SensorScanResult } from '@/core/simulation/CollisionSystem';
 import { DynamicReplanner } from '@/core/pathfinding/Replanner';
+import { SensorDiscoveryEngine, NewlyDiscoveredHazard } from '@/core/sensor/SensorDiscoveryEngine';
 import { clamp, normalizeAngle, angleDifference } from '@/lib/math';
 
 export interface ManualControlsInput {
@@ -17,7 +18,9 @@ export interface ManualControlsInput {
 export interface SimulationStepInput {
   state: RoverState;
   config: RoverConfig;
-  terrain: TerrainGrid;
+  terrain: TerrainGrid; // Known map
+  groundTruthTerrain?: TerrainGrid; // Physical ground truth map
+  sensorDiscoveryMode?: boolean;
   activePath: Point2D[];
   currentWaypointIndex: number;
   targetPoint: Point2D;
@@ -26,6 +29,7 @@ export interface SimulationStepInput {
   rerouteCount: number;
   isAutonomous: boolean;
   algorithm?: AlgorithmType;
+  hazardsDetectedTotal?: number;
 }
 
 export interface SimulationStepResult {
@@ -40,6 +44,9 @@ export interface SimulationStepResult {
   isFinished: boolean;
   finishOutcome?: 'SUCCESS' | 'OBSTACLE_COLLISION' | 'BATTERY_DEPLETED' | 'ABORTED';
   replanTelemetry?: ReplanTelemetry;
+  discoveryTelemetry?: DiscoveryTelemetry;
+  newlyDiscoveredCells?: Point2D[];
+  newlyDiscoveredHazards?: NewlyDiscoveredHazard[];
 }
 
 /**
@@ -78,11 +85,52 @@ export class RoverSimulationEngine {
       previousPosition: prevPos,
     };
 
-    // 1. Continuous LiDAR Sensor Scan
-    const scan = CollisionSystem.scanLiDAR(updatedState, config, terrain);
+    const groundTruth = input.groundTruthTerrain || terrain;
+    const knownTerrain = terrain;
+    const isDiscoveryMode = !!input.sensorDiscoveryMode;
 
-    // 2. Collision & Rollover Verification (rover must not pass through blocked terrain)
-    const collision = CollisionSystem.checkCollision(updatedState, terrain);
+    let discoveryTelemetry: DiscoveryTelemetry | undefined = undefined;
+    let newlyDiscoveredCells: Point2D[] | undefined = undefined;
+    let newlyDiscoveredHazards: NewlyDiscoveredHazard[] | undefined = undefined;
+
+    // 1. LiDAR Sensor Scan & Unknown Terrain Discovery
+    let scan: SensorScanResult;
+
+    if (isDiscoveryMode) {
+      const discResult = SensorDiscoveryEngine.executeLiDARScan(
+        updatedState,
+        config,
+        groundTruth,
+        knownTerrain,
+        updatedPath,
+        nextWaypointIdx,
+        input.hazardsDetectedTotal || 0,
+        nextRerouteCount
+      );
+
+      discoveryTelemetry = discResult.telemetry;
+      newlyDiscoveredCells = discResult.newlyDiscoveredCells;
+      newlyDiscoveredHazards = discResult.newlyDiscoveredHazards;
+
+      for (const ev of discResult.generatedEvents) {
+        newEvents.push(ev);
+      }
+
+      // Convert to standard SensorScanResult for HUD compatibility
+      scan = {
+        hasHazardAhead: discResult.newlyDiscoveredHazards.length > 0,
+        closestHazardDistMeters: discResult.newlyDiscoveredHazards.length > 0 ? discResult.newlyDiscoveredHazards[0].distanceMeters : Infinity,
+        hazardCell: discResult.newlyDiscoveredHazards.length > 0 ? groundTruth.cells[discResult.newlyDiscoveredHazards[0].y]?.[discResult.newlyDiscoveredHazards[0].x] : undefined,
+        hazardType: discResult.newlyDiscoveredHazards.length > 0 ? discResult.newlyDiscoveredHazards[0].hazardType as any : undefined,
+        hazardDescription: discResult.newlyDiscoveredHazards.length > 0 ? discResult.newlyDiscoveredHazards[0].description : undefined,
+        scannedCells: discResult.scannedCellsInSweep,
+      };
+    } else {
+      scan = CollisionSystem.scanLiDAR(updatedState, config, terrain);
+    }
+
+    // 2. Collision & Rollover Verification (rover must not pass through physical ground truth terrain)
+    const collision = CollisionSystem.checkCollision(updatedState, groundTruth);
     if (collision.isCrashed) {
       updatedState.hasCrashed = true;
       updatedState.velocity = 0;
@@ -97,8 +145,8 @@ export class RoverSimulationEngine {
         message: `COLLISION HALT: ${collision.reason || 'Impassable terrain encountered.'}`,
       });
 
-      const currentCell = this.getCellAt(updatedState.x, updatedState.y, terrain);
-      const telemetry = this.createTelemetryPoint(updatedState, currentCell, 0, terrain);
+      const currentCell = this.getCellAt(updatedState.x, updatedState.y, groundTruth);
+      const telemetry = this.createTelemetryPoint(updatedState, currentCell, 0, groundTruth, discoveryTelemetry);
 
       return {
         updatedState,
@@ -111,6 +159,9 @@ export class RoverSimulationEngine {
         telemetry,
         isFinished: true,
         finishOutcome: 'OBSTACLE_COLLISION',
+        discoveryTelemetry,
+        newlyDiscoveredCells,
+        newlyDiscoveredHazards,
       };
     }
 
@@ -128,24 +179,41 @@ export class RoverSimulationEngine {
       const distToAvoided = Math.hypot(
         updatedState.x - updatedState.avoidedHazard.x,
         updatedState.y - updatedState.avoidedHazard.y
-      ) * terrain.resolution;
+      ) * groundTruth.resolution;
       if (distToAvoided > Math.max(4.5, config.sensorRangeMeters * 0.75)) {
         updatedState.avoidedHazard = undefined;
       }
     }
 
-    if (isAutonomous && scan.hasHazardAhead && scan.closestHazardDistMeters < config.sensorRangeMeters * 0.85) {
+    if (isAutonomous) {
       const lookaheadCount = Math.min(8, updatedPath.length - nextWaypointIdx);
       const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + lookaheadCount);
 
-      // Check if any upcoming waypoint directly intersects an impassable hazard cell
+      // Check if any upcoming waypoint directly intersects an impassable hazard cell in known map
       let blockingCell = upcomingWaypoints
-        .map((p) => terrain.cells[Math.round(p.y)]?.[Math.round(p.x)])
-        .find((c) => c && CollisionSystem.classifyHazard(c).isHazard);
+        .map((p) => knownTerrain.cells[Math.round(p.y)]?.[Math.round(p.x)])
+        .find((c) => c && c.discovered && CollisionSystem.classifyHazard(c).isHazard);
 
-      // If no discrete waypoint is directly on a hazard cell, check if the planned trajectory corridor
-      // intersects dangerously close (<= 1.6m) to a NEW hazard that is NOT already avoided
-      if (!blockingCell && scan.hazardCell) {
+      // In discovery mode: also check newly discovered hazards
+      if (!blockingCell && isDiscoveryMode && newlyDiscoveredHazards && newlyDiscoveredHazards.length > 0) {
+        for (const hz of newlyDiscoveredHazards) {
+          const isAlreadyAvoided = !!(updatedState.avoidedHazard &&
+            Math.hypot(updatedState.avoidedHazard.x - hz.x, updatedState.avoidedHazard.y - hz.y) <= 1.2);
+          if (!isAlreadyAvoided) {
+            const isPathClose = upcomingWaypoints.some((wp) => {
+              const d = Math.hypot(wp.x - hz.x, wp.y - hz.y) * knownTerrain.resolution;
+              return d <= 1.6;
+            });
+            if (isPathClose) {
+              blockingCell = knownTerrain.cells[hz.y]?.[hz.x];
+              break;
+            }
+          }
+        }
+      }
+
+      // Standard mode lookahead check
+      if (!blockingCell && !isDiscoveryMode && scan.hasHazardAhead && scan.closestHazardDistMeters < config.sensorRangeMeters * 0.85 && scan.hazardCell) {
         const hz = scan.hazardCell;
         const isAlreadyAvoided = !!(updatedState.avoidedHazard &&
           Math.hypot(updatedState.avoidedHazard.x - hz.x, updatedState.avoidedHazard.y - hz.y) <= 1.2);
@@ -182,12 +250,12 @@ export class RoverSimulationEngine {
           timestamp: Date.now(),
           simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
           type: 'WARNING',
-          message: `OBSTACLE IDENTIFIED at [${blockingCell.x}, ${blockingCell.y}] (${obstacleDesc}) ${scan.closestHazardDistMeters}m ahead. Halting rover for replanning.`,
+          message: `OBSTACLE IDENTIFIED at [${blockingCell.x}, ${blockingCell.y}] (${obstacleDesc}) ${scan.closestHazardDistMeters < Infinity ? scan.closestHazardDistMeters + 'm ahead' : 'in path corridor'}. Halting rover for replanning.`,
         });
 
-        // Step 3: CALCULATE A NEW PATH SAFELY AROUND THE HAZARD (using D* Lite / Dynamic Replanner)
+        // Step 3: CALCULATE A NEW PATH SAFELY AROUND THE HAZARD on knownTerrain (using D* Lite / Dynamic Replanner)
         const replanResult = DynamicReplanner.replan(
-          terrain,
+          knownTerrain,
           { x: updatedState.x, y: updatedState.y },
           updatedPath.slice(nextWaypointIdx),
           targetPoint,
@@ -203,7 +271,7 @@ export class RoverSimulationEngine {
           latestReplanTelemetry = replanResult.replanTelemetry;
 
           // Advance immediately to the forward detour waypoint so rover steers & drives around obstacle
-          const dToP0 = Math.hypot(updatedPath[0].x - updatedState.x, updatedPath[0].y - updatedState.y) * terrain.resolution;
+          const dToP0 = Math.hypot(updatedPath[0].x - updatedState.x, updatedPath[0].y - updatedState.y) * knownTerrain.resolution;
           nextWaypointIdx = (dToP0 <= 0.8 && updatedPath.length > 1) ? 1 : 0;
           nextRerouteCount += 1;
           currentStatus = 'RUNNING';
@@ -222,7 +290,7 @@ export class RoverSimulationEngine {
             message: `ROUTE REPLANNED (${input.algorithm === 'DSTAR_LITE' ? 'D* Lite' : 'Dynamic Solver'}): Detour path (${replanResult.totalDistanceMeters.toFixed(1)}m${deltaMsg}${nodesMsg}) safe around obstacle. Resuming mission navigation.`,
           });
         } else {
-          // Path completely obstructed
+          // Path completely obstructed / impossible route
           currentStatus = 'PAUSED';
           newEvents.push({
             id: `evt-replan-fail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -374,7 +442,7 @@ export class RoverSimulationEngine {
     }
 
     // 8. Continuous Telemetry Generation
-    const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, terrain);
+    const telemetry = this.createTelemetryPoint(updatedState, currentCell, powerDrawWatts, terrain, discoveryTelemetry);
 
     return {
       updatedState,
@@ -387,6 +455,9 @@ export class RoverSimulationEngine {
       telemetry,
       isFinished: false,
       replanTelemetry: latestReplanTelemetry,
+      discoveryTelemetry,
+      newlyDiscoveredCells,
+      newlyDiscoveredHazards,
     };
   }
 
@@ -400,7 +471,8 @@ export class RoverSimulationEngine {
     state: RoverState,
     cell: TerrainCell,
     powerDrawWatts: number,
-    terrain: TerrainGrid
+    terrain: TerrainGrid,
+    discovery?: DiscoveryTelemetry
   ): TelemetryPoint {
     return {
       timestamp: Date.now(),
@@ -413,6 +485,8 @@ export class RoverSimulationEngine {
       slopeDeg: Number(state.pitch.toFixed(1)),
       powerDrawWatts: Number(powerDrawWatts.toFixed(1)),
       headingDeg: Number(((state.heading * 180) / Math.PI).toFixed(1)),
+      discoveredCellsCount: discovery?.cellsDiscoveredCount,
+      explorationPct: discovery?.explorationPercentage,
     };
   }
 }

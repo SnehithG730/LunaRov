@@ -16,6 +16,8 @@ import {
   Mountain,
   RotateCcw,
   Cpu,
+  Radio,
+  Radar,
 } from 'lucide-react';
 
 const PRESET_ROVER_NAMES = [
@@ -39,6 +41,8 @@ export const MissionConfigPanel: React.FC = () => {
     setAlgorithm,
     obstacleToggles,
     setObstacleToggles,
+    sensorDiscoveryMode,
+    setSensorDiscoveryMode,
   } = useMissionStore();
 
   const handleRoverPreset = (name: string) => {
@@ -458,6 +462,52 @@ export const MissionConfigPanel: React.FC = () => {
               </div>
             </label>
           </div>
+        </div>
+
+        {/* 6. Sensor Discovery / Unknown Terrain Mode (Fog of War) */}
+        <div className="space-y-3 pt-2 border-t border-slate-800/60">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Radio className="w-3.5 h-3.5 text-cyan-400" />
+              <label className="text-[11px] font-mono text-slate-300 uppercase tracking-wider font-semibold">
+                Sensor Discovery Mode
+              </label>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+              sensorDiscoveryMode
+                ? 'bg-cyan-950/80 text-cyan-300 border-cyan-700/80'
+                : 'bg-slate-900 text-slate-400 border-slate-700'
+            }`}>
+              {sensorDiscoveryMode ? 'FOG OF WAR ACTIVE' : 'FULL AWARENESS'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setSensorDiscoveryMode(!sensorDiscoveryMode)}
+            className={`w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${
+              sensorDiscoveryMode
+                ? 'bg-cyan-950/40 border-cyan-500/70 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+                : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-mono font-semibold flex items-center gap-2 text-cyan-300">
+                <Radar className="w-4 h-4 text-cyan-400 animate-pulse" />
+                LiDAR Blind Exploration
+              </span>
+              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${
+                sensorDiscoveryMode ? 'bg-cyan-500' : 'bg-slate-700'
+              }`}>
+                <div className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                  sensorDiscoveryMode ? 'translate-x-4' : 'translate-x-0'
+                }`} />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Rover starts with incomplete map knowledge. Simulated LiDAR sweeps reveal terrain cells, unmapped craters, boulders, and steep slopes in real-time, triggering autonomous route replanning.
+            </p>
+          </button>
         </div>
       </div>
     </aside>

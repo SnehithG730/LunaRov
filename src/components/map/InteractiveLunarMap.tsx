@@ -186,6 +186,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
   const setEditorBrush = useMissionStore((s) => s.setEditorBrush);
   const sensorScan = useMissionStore((s) => s.sensorScan);
   const simulationStatus = useMissionStore((s) => s.simulationStatus);
+  const sensorDiscoveryMode = useMissionStore((s) => s.sensorDiscoveryMode);
 
   // Local interaction state
   const [interactionMode, setInteractionMode] = useState<MapInteractionMode>(initialMode);
@@ -752,6 +753,15 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       for (let x = 0; x < width; x++) {
         const cell = cells[y][x];
         pos.setY(idx, cell.elevation);
+
+        // Fog of War: Unknown cell shroud in Sensor Discovery Mode
+        if (sensorDiscoveryMode && !cell.discovered) {
+          colors[idx * 3] = 0.02;
+          colors[idx * 3 + 1] = 0.04;
+          colors[idx * 3 + 2] = 0.08;
+          idx++;
+          continue;
+        }
 
         const normElev = (cell.elevation - minElevation) / elevRange;
 

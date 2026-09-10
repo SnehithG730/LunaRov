@@ -13,6 +13,8 @@ export const TelemetryHUD: React.FC = () => {
 
   const latestReplanTelemetry = useMissionStore((s) => s.latestReplanTelemetry);
   const selectedAlgorithm = useMissionStore((s) => s.selectedAlgorithm);
+  const sensorDiscoveryMode = useMissionStore((s) => s.sensorDiscoveryMode);
+  const latestDiscoveryTelemetry = useMissionStore((s) => s.latestDiscoveryTelemetry);
 
   const curCellX = Math.max(0, Math.min(terrain.width - 1, Math.round(roverState.x)));
   const curCellY = Math.max(0, Math.min(terrain.height - 1, Math.round(roverState.y)));
@@ -29,6 +31,12 @@ export const TelemetryHUD: React.FC = () => {
           <span className="font-bold text-gray-200">LIVE TELEMETRY STREAM</span>
         </div>
         <div className="flex items-center gap-2">
+          {sensorDiscoveryMode && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              DISCOVERY ACTIVE
+            </span>
+          )}
           {selectedAlgorithm === 'DSTAR_LITE' && (
             <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700 font-bold">
               D* LITE ACTIVE
@@ -145,6 +153,41 @@ export const TelemetryHUD: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Sensor Discovery / Unknown Terrain Exploration Telemetry Card */}
+      {sensorDiscoveryMode && latestDiscoveryTelemetry && (
+        <div className="p-2.5 rounded-lg bg-[#06181e] border border-emerald-800/60 text-[10.5px] space-y-1.5 text-emerald-200">
+          <div className="flex justify-between items-center border-b border-emerald-900/50 pb-1">
+            <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              UNKNOWN TERRAIN LIDAR DISCOVERY
+            </span>
+            <span className="text-[9.5px] text-emerald-400 font-mono">
+              {latestDiscoveryTelemetry.explorationPercentage.toFixed(1)}% EXPLORED
+            </span>
+          </div>
+
+          {/* Mini progress bar */}
+          <div className="w-full bg-emerald-950/80 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, latestDiscoveryTelemetry.explorationPercentage))}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5 text-gray-300">
+            <div>Cells Discovered: <strong className="text-emerald-300">{latestDiscoveryTelemetry.cellsDiscoveredCount} / {latestDiscoveryTelemetry.totalCellsInGrid}</strong></div>
+            <div>Unknown Remaining: <strong className="text-gray-400">{latestDiscoveryTelemetry.unknownCellsRemaining}</strong></div>
+            <div>Hazards Detected: <strong className="text-amber-300">{latestDiscoveryTelemetry.hazardsDetectedCount}</strong></div>
+            <div>LiDAR Reach: <strong className="text-cyan-300">{roverConfig.sensorRangeMeters} m</strong></div>
+          </div>
+          {latestDiscoveryTelemetry.lastDiscoveryMessage && (
+            <div className="text-[9.5px] text-emerald-400/90 truncate pt-0.5 font-mono">
+              &gt; {latestDiscoveryTelemetry.lastDiscoveryMessage}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Dynamic D* Lite Replanning Telemetry Bar (if replanning occurred) */}
       {rerouteCount > 0 && latestReplanTelemetry && (

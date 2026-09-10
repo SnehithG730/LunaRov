@@ -35,6 +35,7 @@ export const TerrainPreviewCenter: React.FC = () => {
     originalPlannedPath,
     setEditorBrush,
     applyBrushAt,
+    sensorDiscoveryMode,
   } = useMissionStore();
 
   const [mode, setMode] = useState<InteractionMode>('SET_START');
@@ -193,11 +194,21 @@ export const TerrainPreviewCenter: React.FC = () => {
           const hillshade = 1.0 - (gradX * sunDx + gradY * sunDy) * 0.08;
           const clampedShade = Math.max(0.45, Math.min(1.55, hillshade));
 
+          // Micro regolith grain texture variation
+          const grain = ((px * 17 + py * 31) % 7) - 3;
           // Elevation normalization (0.0 to 1.0)
           const normElev = (elev - minEl) / elRange;
 
-          // Subtle procedural mineral grain
-          const grain = (((Math.sin(px * 12.9898 + py * 78.233) * 43758.5453) % 1) * 6 - 3);
+          // Fog of War: Unknown terrain rendering in discovery mode
+          const cellSample = terrain.cells[Math.floor(gy)]?.[Math.floor(gx)];
+          if (sensorDiscoveryMode && cellSample && !cellSample.discovered) {
+            const idx = (py * rasterDim + px) * 4;
+            data[idx] = 6;
+            data[idx + 1] = 10;
+            data[idx + 2] = 20;
+            data[idx + 3] = 255;
+            continue;
+          }
 
           let r = 0;
           let g = 0;

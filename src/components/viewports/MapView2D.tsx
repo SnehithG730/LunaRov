@@ -26,6 +26,9 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
   const applyBrushAt = useMissionStore((s) => s.applyBrushAt);
 
+  const sensorDiscoveryMode = useMissionStore((s) => s.sensorDiscoveryMode);
+  const originalPlannedPath = useMissionStore((s) => s.originalPlannedPath);
+
   const [hoverInfo, setHoverInfo] = useState<{
     x: number;
     y: number;
@@ -33,6 +36,8 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     slope: number;
     cost: number;
     isObstacle: boolean;
+    discovered?: boolean;
+    hazardType?: string;
   } | null>(null);
 
   const isMouseDownRef = useRef(false);
@@ -51,13 +56,25 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
 
     ctx.clearRect(0, 0, width, height);
 
-    // 1. Draw Terrain Elevation Cells
+    // 1. Draw Terrain Elevation Cells (with Fog-of-War support)
     const { minElevation, maxElevation } = terrain;
     const elevRange = Math.max(1, maxElevation - minElevation);
 
     for (let y = 0; y < terrain.height; y++) {
       for (let x = 0; x < terrain.width; x++) {
         const cell = terrain.cells[y][x];
+
+        // Fog of War: Unknown cell rendering in Discovery Mode
+        if (sensorDiscoveryMode && !cell.discovered) {
+          ctx.fillStyle = '#050a14';
+          ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+
+          // Subtle unmapped grid hash
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+          ctx.fillRect(x * cellW + 1, y * cellH + 1, cellW - 2, cellH - 2);
+          continue;
+        }
+
         const normElev = (cell.elevation - minElevation) / elevRange; // 0 to 1
 
         if (cell.isObstacle) {
@@ -83,6 +100,12 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
             ctx.fillStyle = `rgba(245, 158, 11, ${hazardAlpha})`;
             ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
           }
+        }
+
+        // Recent discovery highlight glow
+        if (cell.discoveredAtSec !== undefined && Math.abs(roverState.elapsedTimeSeconds - cell.discoveredAtSec) < 1.5) {
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+          ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
         }
       }
     }
@@ -127,6 +150,26 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       }
       ctx.stroke();
       ctx.setLineDash([]); // Reset dash
+    }
+
+    // 4b. Draw Original Planned Route (Ghost Trail if replanned)
+    if (
+      originalPlannedPath &&
+      originalPlannedPath.length > 1 &&
+      activePath &&
+      (originalPlannedPath.length !== activePath.length || originalPlannedPath !== activePath)
+    ) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo((originalPlannedPath[0].x + 0.5) * cellW, (originalPlannedPath[0].y + 0.5) * cellH);
+      for (let i = 1; i < originalPlannedPath.length; i++) {
+        ctx.lineTo((originalPlannedPath[i].x + 0.5) * cellW, (originalPlannedPath[i].y + 0.5) * cellH);
+      }
+      ctx.stroke();
+      ctx.restore();
     }
 
     // 5. Draw Planned Path (Curved-and-Straight Aerospace Trajectory)
@@ -192,13 +235,23 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       }
     }
 
-    // 6. LiDAR Sensor Vision Cone
+    // 6. LiDAR Sensor Range Ring & Vision Cone
     const roverPx = (roverState.x + 0.5) * cellW;
     const roverPy = (roverState.y + 0.5) * cellH;
     const sensorRangePx = (roverConfig.sensorRangeMeters / terrain.resolution) * cellW;
     const halfFovRad = ((roverConfig.sensorFovDeg * 0.5) * Math.PI) / 180;
 
     ctx.save();
+    // 360° LiDAR Detection Perimeter Circle
+    ctx.beginPath();
+    ctx.arc(roverPx, roverPy, sensorRangePx, 0, Math.PI * 2);
+    ctx.strokeStyle = sensorDiscoveryMode ? 'rgba(6, 182, 212, 0.35)' : 'rgba(0, 240, 255, 0.18)';
+    ctx.lineWidth = 1.0;
+    ctx.setLineDash([2, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Forward Directional LiDAR Arc
     ctx.beginPath();
     ctx.moveTo(roverPx, roverPy);
     ctx.arc(

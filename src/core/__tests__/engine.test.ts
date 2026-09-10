@@ -57,6 +57,8 @@ import './dstarLite.test';
 // Trigger Rover Simulation Engine Unit Tests
 import './simulationEngine.test';
 
-// Trigger Supabase Database & Authentication Unit Tests
-import './authDatabase.test';
+// Trigger Sensor Discovery & Unknown Terrain Unit Tests
+import './discoveryMode.test';
 
+// Trigger Auth & Database Unit Tests
+import './authDatabase.test';

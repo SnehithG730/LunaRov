@@ -310,6 +310,55 @@ export const MissionResultsView: React.FC<MissionResultsViewProps> = ({
         </div>
       </div>
 
+      {/* 2b. SENSOR DISCOVERY & TERRAIN EXPLORATION SUMMARY */}
+      {(missionResults?.sensorDiscoveryMode || missionResults?.explorationPercentage !== undefined) && (
+        <div className="bg-[#06181e] border border-emerald-800/80 rounded-xl p-4 shadow-xl space-y-3 font-mono">
+          <div className="flex items-center justify-between border-b border-emerald-900/60 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-bold text-emerald-300 text-xs tracking-wider">UNKNOWN TERRAIN EXPLORATION & SENSOR DISCOVERY</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">
+              {missionResults.explorationPercentage?.toFixed(1) ?? '100.0'}% REGOLITH REVEALED
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-black/40 p-2.5 rounded-lg border border-emerald-950">
+              <div className="text-gray-400 text-[10px]">TOTAL EXPLORED AREA</div>
+              <div className="text-lg font-extrabold text-emerald-300">
+                {(missionResults.totalExploredAreaM2 ?? ((missionResults.discoveredCellsCount ?? 3600) * 4)).toLocaleString()} <span className="text-xs font-normal">m²</span>
+              </div>
+              <div className="text-[9.5px] text-gray-500">{missionResults.discoveredCellsCount ?? 3600} grid cells mapped</div>
+            </div>
+
+            <div className="bg-black/40 p-2.5 rounded-lg border border-emerald-950">
+              <div className="text-gray-400 text-[10px]">HAZARDS DETECTED</div>
+              <div className="text-lg font-extrabold text-amber-300">
+                {missionResults.hazardsDetectedCount ?? 0} <span className="text-xs font-normal">obstacles</span>
+              </div>
+              <div className="text-[9.5px] text-gray-500">Craters, boulders & slopes</div>
+            </div>
+
+            <div className="bg-black/40 p-2.5 rounded-lg border border-emerald-950">
+              <div className="text-gray-400 text-[10px]">UNEXPECTED REPLANS</div>
+              <div className="text-lg font-extrabold text-cyan-300">
+                {missionResults.unexpectedObstaclesCount ?? rerouteCount} <span className="text-xs font-normal">reroutes</span>
+              </div>
+              <div className="text-[9.5px] text-gray-500">Autonomous dynamic detours</div>
+            </div>
+
+            <div className="bg-black/40 p-2.5 rounded-lg border border-emerald-950">
+              <div className="text-gray-400 text-[10px]">EXPLORATION ENERGY</div>
+              <div className="text-lg font-extrabold text-white">
+                {(missionResults.energyUsedDuringExplorationWh ?? batteryConsumedWh).toFixed(1)} <span className="text-xs font-normal">Wh</span>
+              </div>
+              <div className="text-[9.5px] text-gray-500">Battery energy consumed</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3. VISUALIZATION & CHARTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Final Lunar Trajectory Map */}

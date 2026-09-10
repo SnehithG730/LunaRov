@@ -42,6 +42,18 @@ export interface RoverState {
   avoidedHazard?: Point2D;    // Hazard cell currently being detoured around
 }
 
+export interface DiscoveryTelemetry {
+  lidarRangeMeters: number;
+  cellsScannedTotal: number;
+  cellsDiscoveredCount: number;
+  totalCellsInGrid: number;
+  explorationPercentage: number;
+  hazardsDetectedCount: number;
+  unknownCellsRemaining: number;
+  replansCount: number;
+  lastDiscoveryMessage?: string;
+}
+
 export interface TelemetryPoint {
   timestamp: number;
   x: number;
@@ -53,4 +65,6 @@ export interface TelemetryPoint {
   slopeDeg: number;
   powerDrawWatts: number;
   headingDeg: number;
+  discoveredCellsCount?: number;
+  explorationPct?: number;
 }

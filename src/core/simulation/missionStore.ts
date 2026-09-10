@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { TerrainGrid, TerrainType, ObstacleToggles } from '@/types/terrain';
-import { RoverConfig, RoverState, TelemetryPoint } from '@/types/rover';
+import { RoverConfig, RoverState, TelemetryPoint, DiscoveryTelemetry } from '@/types/rover';
 import { AlgorithmType, Point2D, PathfindingResult, ReplanTelemetry } from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent, MissionResults, SavedMission } from '@/types/mission';
 import { TerrainGenerator } from '@/core/terrain/TerrainGenerator';
@@ -9,6 +9,7 @@ import { DijkstraPathfinder } from '@/core/pathfinding/Dijkstra';
 import { GreedyBFSPathfinder } from '@/core/pathfinding/GreedyBFS';
 import { DStarLitePathfinder } from '@/core/pathfinding/DStarLite';
 import { RoverSimulationEngine } from '@/core/rover/RoverSimulationEngine';
+import { SensorDiscoveryEngine } from '@/core/sensor/SensorDiscoveryEngine';
 import { SensorScanResult } from '@/core/simulation/CollisionSystem';
 import { TrajectoryPlanner } from '@/core/pathfinding/TrajectoryPlanner';
 import { DEFAULT_ROVER_CONFIG, DEFAULT_GRID_SIZE } from '@/lib/constants';
@@ -17,6 +18,9 @@ import { saveMissionToStorage } from '@/lib/storage';
 export interface MissionStoreState {
   missionName: string;
   terrain: TerrainGrid;
+  groundTruthTerrain: TerrainGrid;
+  knownTerrain: TerrainGrid;
+  sensorDiscoveryMode: boolean;
   roverConfig: RoverConfig;
   roverState: RoverState;
   startPoint: Point2D;
@@ -27,6 +31,7 @@ export interface MissionStoreState {
   activePath: Point2D[];
   originalPlannedPath: Point2D[];
   latestReplanTelemetry: ReplanTelemetry | null;
+  latestDiscoveryTelemetry: DiscoveryTelemetry | null;
   currentWaypointIndex: number;
   simulationStatus: SimulationStatus;
   playbackSpeed: number; // 1, 2, 5, 10
@@ -41,6 +46,7 @@ export interface MissionStoreState {
 
   // Actions
   setMissionName: (name: string) => void;
+  setSensorDiscoveryMode: (enabled: boolean) => void;
   setObstacleToggles: (toggles: Partial<ObstacleToggles>) => void;
   setTerrainType: (type: TerrainType, seed?: number) => void;
   regenerateTerrain: (seed?: number) => void;
@@ -98,6 +104,9 @@ const initialRoverState: RoverState = {
 export const useMissionStore = create<MissionStoreState>((set, get) => ({
   missionName: 'LunaRov Mission 01',
   terrain: initialGrid,
+  groundTruthTerrain: initialGrid,
+  knownTerrain: initialGrid,
+  sensorDiscoveryMode: false,
   roverConfig: { ...DEFAULT_ROVER_CONFIG },
   roverState: { ...initialRoverState },
   startPoint: defaultStart,
@@ -108,6 +117,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   activePath: [],
   originalPlannedPath: [],
   latestReplanTelemetry: null,
+  latestDiscoveryTelemetry: null,
   currentWaypointIndex: 0,
   simulationStatus: 'IDLE',
   playbackSpeed: 1, // 0.5, 1, 2, 5, 10
@@ -130,17 +140,52 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
 
   setMissionName: (name: string) => set({ missionName: name }),
 
+  setSensorDiscoveryMode: (enabled: boolean) => {
+    const { groundTruthTerrain, startPoint } = get();
+    if (enabled) {
+      const initialKnown = SensorDiscoveryEngine.createInitialKnownTerrain(groundTruthTerrain, startPoint);
+      set({
+        sensorDiscoveryMode: true,
+        knownTerrain: initialKnown,
+        terrain: initialKnown,
+        pathResult: null,
+        activePath: [],
+        currentWaypointIndex: 0,
+        simulationStatus: 'IDLE',
+      });
+      get().addMissionEvent('INFO', 'Unknown Terrain / LiDAR Discovery mode ENABLED (Fog of War active).');
+      get().computePath();
+    } else {
+      set({
+        sensorDiscoveryMode: false,
+        knownTerrain: groundTruthTerrain,
+        terrain: groundTruthTerrain,
+        pathResult: null,
+        activePath: [],
+        currentWaypointIndex: 0,
+        simulationStatus: 'IDLE',
+      });
+      get().addMissionEvent('INFO', 'Sensor Discovery mode DISABLED (Full terrain awareness).');
+      get().computePath();
+    }
+  },
+
   setObstacleToggles: (toggles: Partial<ObstacleToggles>) => {
     const updated = { ...get().obstacleToggles, ...toggles };
     set({ obstacleToggles: updated });
-    const { terrain } = get();
+    const { terrain, sensorDiscoveryMode, startPoint } = get();
     // Regenerate with updated toggles
     const newGrid = TerrainGenerator.generate(terrain.type, {
       seed: terrain.seed,
       obstacleToggles: updated,
     });
+    const known = sensorDiscoveryMode
+      ? SensorDiscoveryEngine.createInitialKnownTerrain(newGrid, startPoint)
+      : newGrid;
     set({
-      terrain: newGrid,
+      groundTruthTerrain: newGrid,
+      knownTerrain: known,
+      terrain: known,
       pathResult: null,
       activePath: [],
       currentWaypointIndex: 0,
@@ -155,8 +200,14 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       seed: newSeed,
       obstacleToggles: get().obstacleToggles,
     });
+    const { sensorDiscoveryMode, startPoint } = get();
+    const known = sensorDiscoveryMode
+      ? SensorDiscoveryEngine.createInitialKnownTerrain(newGrid, startPoint)
+      : newGrid;
     set({
-      terrain: newGrid,
+      groundTruthTerrain: newGrid,
+      knownTerrain: known,
+      terrain: known,
       pathResult: null,
       activePath: [],
       currentWaypointIndex: 0,
@@ -167,14 +218,19 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   regenerateTerrain: (seed) => {
-    const { terrain, obstacleToggles } = get();
+    const { terrain, obstacleToggles, sensorDiscoveryMode, startPoint } = get();
     const newSeed = seed ?? Math.floor(Math.random() * 100000);
     const newGrid = TerrainGenerator.generate(terrain.type, {
       seed: newSeed,
       obstacleToggles,
     });
+    const known = sensorDiscoveryMode
+      ? SensorDiscoveryEngine.createInitialKnownTerrain(newGrid, startPoint)
+      : newGrid;
     set({
-      terrain: newGrid,
+      groundTruthTerrain: newGrid,
+      knownTerrain: known,
+      terrain: known,
       pathResult: null,
       activePath: [],
       currentWaypointIndex: 0,
@@ -354,14 +410,40 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   startSimulation: () => {
+    const { sensorDiscoveryMode, groundTruthTerrain, startPoint } = get();
+    if (sensorDiscoveryMode) {
+      const freshKnown = SensorDiscoveryEngine.createInitialKnownTerrain(groundTruthTerrain, startPoint);
+      set({ knownTerrain: freshKnown, terrain: freshKnown });
+    }
+
     const { pathResult, selectedAlgorithm } = get();
     if (selectedAlgorithm !== 'MANUAL' && (!pathResult || !pathResult.success || pathResult.path.length === 0)) {
       const computed = get().computePath();
       if (!computed || !computed.success) return;
     }
 
-    set({ simulationStatus: 'RUNNING' });
-    get().addMissionEvent('INFO', 'Mission simulation initiated.');
+    const { activePath, roverState } = get();
+    if (activePath.length > 0) {
+      set({
+        originalPlannedPath: [...activePath],
+        roverState: {
+          ...roverState,
+          x: activePath[0].x,
+          y: activePath[0].y,
+          velocity: 0,
+          missionStatus: 'RUNNING',
+          goalReached: false,
+          hasCrashed: false,
+          isStuck: false,
+        },
+        currentWaypointIndex: 0,
+        simulationStatus: 'RUNNING',
+        telemetryHistory: [],
+        rerouteCount: 0,
+        latestReplanTelemetry: null,
+      });
+      get().addMissionEvent('SUCCESS', `Mission simulation initiated under autonomous control [${get().selectedAlgorithm}].`);
+    }
   },
 
   pauseSimulation: () => {
@@ -379,9 +461,15 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   resetSimulation: () => {
-    const { startPoint, roverConfig } = get();
+    const { startPoint, roverConfig, sensorDiscoveryMode, groundTruthTerrain } = get();
+    const freshKnown = sensorDiscoveryMode
+      ? SensorDiscoveryEngine.createInitialKnownTerrain(groundTruthTerrain, startPoint)
+      : groundTruthTerrain;
+
     set({
       simulationStatus: 'IDLE',
+      knownTerrain: freshKnown,
+      terrain: freshKnown,
       roverState: {
         ...initialRoverState,
         x: startPoint.x,
@@ -396,6 +484,8 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       missionResults: null,
       sensorScan: null,
       rerouteCount: 0,
+      latestDiscoveryTelemetry: null,
+      latestReplanTelemetry: null,
     });
     get().addMissionEvent('INFO', 'Rover reset to starting coords.');
   },
@@ -512,7 +602,9 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     const stepResult = RoverSimulationEngine.step({
       state: state.roverState,
       config: state.roverConfig,
-      terrain: state.terrain,
+      terrain: state.knownTerrain || state.terrain,
+      groundTruthTerrain: state.groundTruthTerrain || state.terrain,
+      sensorDiscoveryMode: state.sensorDiscoveryMode,
       activePath: state.activePath,
       currentWaypointIndex: state.currentWaypointIndex,
       targetPoint: state.targetPoint,
@@ -521,6 +613,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       rerouteCount: state.rerouteCount,
       isAutonomous,
       algorithm: state.selectedAlgorithm,
+      hazardsDetectedTotal: state.latestDiscoveryTelemetry?.hazardsDetectedCount ?? 0,
     });
 
     // Add any newly emitted simulation events
@@ -554,6 +647,15 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         outcome,
         efficiencyScore: efficiency,
         telemetryLog: state.telemetryHistory,
+        sensorDiscoveryMode: state.sensorDiscoveryMode,
+        totalExploredAreaM2: ((stepResult.discoveryTelemetry?.cellsDiscoveredCount ?? (state.terrain.width * state.terrain.height)) * (state.terrain.resolution * state.terrain.resolution)),
+        explorationPercentage: stepResult.discoveryTelemetry?.explorationPercentage ?? (state.sensorDiscoveryMode ? 0 : 100),
+        hazardsDetectedCount: stepResult.discoveryTelemetry?.hazardsDetectedCount ?? 0,
+        unexpectedObstaclesCount: stepResult.rerouteCount,
+        additionalDetourDistanceMeters: state.latestReplanTelemetry?.additionalDistanceMeters ?? 0,
+        energyUsedDuringExplorationWh: energyUsed,
+        discoveredCellsCount: stepResult.discoveryTelemetry?.cellsDiscoveredCount ?? (state.terrain.width * state.terrain.height),
+        totalCellsCount: state.terrain.width * state.terrain.height,
       };
 
       if (outcome === 'SUCCESS') {
@@ -567,6 +669,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
           target: state.targetPoint,
           roverConfig: state.roverConfig,
           results,
+          sensorDiscoveryMode: state.sensorDiscoveryMode,
         });
       }
 
@@ -578,17 +681,21 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         activePath: stepResult.activePath,
         currentWaypointIndex: stepResult.nextWaypointIndex,
         latestReplanTelemetry: stepResult.replanTelemetry || state.latestReplanTelemetry,
+        latestDiscoveryTelemetry: stepResult.discoveryTelemetry || state.latestDiscoveryTelemetry,
+        terrain: state.sensorDiscoveryMode && state.knownTerrain ? { ...state.knownTerrain } : state.terrain,
         missionResults: results,
       });
       return;
     }
 
     set((s) => ({
+      terrain: s.sensorDiscoveryMode && s.knownTerrain ? { ...s.knownTerrain } : s.terrain,
       roverState: stepResult.updatedState,
       simulationStatus: stepResult.simulationStatus,
       activePath: stepResult.activePath,
       currentWaypointIndex: stepResult.nextWaypointIndex,
       latestReplanTelemetry: stepResult.replanTelemetry || s.latestReplanTelemetry,
+      latestDiscoveryTelemetry: stepResult.discoveryTelemetry || s.latestDiscoveryTelemetry,
       pathResult: s.pathResult
         ? {
             ...s.pathResult,
@@ -612,10 +719,17 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     const start = mission.start || { x: 5, y: 5 };
     const target = mission.target || mission.destination || { x: 54, y: 54 };
     const roverCfg = mission.roverConfig || get().roverConfig;
+    const isDiscovery = !!mission.sensorDiscoveryMode;
+    const known = isDiscovery
+      ? SensorDiscoveryEngine.createInitialKnownTerrain(newGrid, start)
+      : newGrid;
 
     set({
       missionName: mission.name,
-      terrain: newGrid,
+      groundTruthTerrain: newGrid,
+      knownTerrain: known,
+      terrain: known,
+      sensorDiscoveryMode: isDiscovery,
       obstacleToggles: targetObstacles,
       startPoint: start,
       targetPoint: target,
@@ -637,6 +751,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       telemetryHistory: mission.results?.telemetryLog || [],
       missionResults: mission.results || null,
       rerouteCount: mission.results?.rerouteCount || 0,
+      latestDiscoveryTelemetry: null,
     });
 
     get().addMissionEvent('INFO', `Loaded mission: "${mission.name}"`);

@@ -22,12 +22,22 @@ export interface TerrainGrid {
   maxElevation: number;
 }
 
+export interface CraterHarmonic {
+  freq: number;
+  amp: number;
+  phase: number;
+}
+
 export interface CraterSpec {
   x: number;
   y: number;
   radius: number;          // Radius in grid cells
   depth: number;           // Depth in meters
   rimHeight: number;       // Rim height in meters
+  eccentricity?: number;   // Elliptical elongation (0.0 = circle, 0.4 = elongated)
+  angle?: number;          // Orientation angle in radians
+  harmonics?: CraterHarmonic[]; // Harmonic perturbations for organic irregular rims
+  roughness?: number;      // Micro-roughness on ejecta blanket
 }
 
 export interface BoulderSpec {

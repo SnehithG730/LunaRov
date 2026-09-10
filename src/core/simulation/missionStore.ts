@@ -410,15 +410,31 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     if (editorBrush === 'ELEVATE') {
       targetCell.elevation += 6.0;
     } else if (editorBrush === 'CRATER') {
-      // Small crater stamp
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
+      // Stamp realistic organic crater with randomized harmonic lobe modulation
+      const stampAngle = Math.random() * Math.PI * 2;
+      const stampEcc = 0.15 + Math.random() * 0.15;
+      const h2Amp = 0.08 + Math.random() * 0.08;
+      const h3Amp = 0.04 + Math.random() * 0.06;
+      const baseR = 3.2;
+
+      for (let dy = -5; dy <= 5; dy++) {
+        for (let dx = -5; dx <= 5; dx++) {
           const cy = y + dy;
           const cx = x + dx;
           if (cy >= 0 && cy < terrain.height && cx >= 0 && cx < terrain.width) {
             const d = Math.hypot(dx, dy);
-            if (d < 2) newCells[cy][cx].elevation -= 5.0 * (1 - d / 2);
-            else if (d <= 2.5) newCells[cy][cx].elevation += 2.0;
+            const ang = Math.atan2(dy, dx) - stampAngle;
+            const rMod = 1.0 + stampEcc * Math.cos(2 * ang) + h2Amp * Math.cos(3 * ang) + h3Amp * Math.cos(4 * ang);
+            const effR = baseR * rMod;
+            const rimR = effR * 1.6;
+
+            if (d < effR) {
+              const t = d / effR;
+              newCells[cy][cx].elevation -= 8.0 * (1.0 - t * t);
+            } else if (d < rimR) {
+              const t = (d - effR) / (rimR - effR);
+              newCells[cy][cx].elevation += 2.5 * Math.pow(1.0 - t, 2.0);
+            }
           }
         }
       }

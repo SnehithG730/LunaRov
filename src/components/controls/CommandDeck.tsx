@@ -32,6 +32,7 @@ export const CommandDeck: React.FC = () => {
   const setPlaybackSpeed = useMissionStore((s) => s.setPlaybackSpeed);
 
   const algorithms: { id: AlgorithmType; label: string; desc: string }[] = [
+    { id: 'DSTAR_LITE', label: 'D* LITE', desc: 'D* Lite dynamically updates the rover\'s route when the environment changes' },
     { id: 'ASTAR', label: 'A* HEURISTIC', desc: 'Optimal cost with slope-aware octile heuristic' },
     { id: 'DIJKSTRA', label: 'DIJKSTRA', desc: 'Uniform cost search exploring all cost contours' },
     { id: 'GREEDY_BFS', label: 'GREEDY BFS', desc: 'Speed-first search prioritizing pure heuristic distance' },

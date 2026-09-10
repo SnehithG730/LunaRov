@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { TerrainGrid, TerrainType, ObstacleToggles } from '@/types/terrain';
 import { RoverConfig, RoverState, TelemetryPoint } from '@/types/rover';
-import { AlgorithmType, Point2D, PathfindingResult } from '@/types/pathfinding';
+import { AlgorithmType, Point2D, PathfindingResult, ReplanTelemetry } from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent, MissionResults, SavedMission } from '@/types/mission';
 import { TerrainGenerator } from '@/core/terrain/TerrainGenerator';
 import { AStarPathfinder } from '@/core/pathfinding/AStar';
 import { DijkstraPathfinder } from '@/core/pathfinding/Dijkstra';
 import { GreedyBFSPathfinder } from '@/core/pathfinding/GreedyBFS';
+import { DStarLitePathfinder } from '@/core/pathfinding/DStarLite';
 import { RoverSimulationEngine } from '@/core/rover/RoverSimulationEngine';
 import { SensorScanResult } from '@/core/simulation/CollisionSystem';
 import { TrajectoryPlanner } from '@/core/pathfinding/TrajectoryPlanner';
@@ -24,6 +25,8 @@ export interface MissionStoreState {
   obstacleToggles: ObstacleToggles;
   pathResult: PathfindingResult | null;
   activePath: Point2D[];
+  originalPlannedPath: Point2D[];
+  latestReplanTelemetry: ReplanTelemetry | null;
   currentWaypointIndex: number;
   simulationStatus: SimulationStatus;
   playbackSpeed: number; // 1, 2, 5, 10
@@ -103,6 +106,8 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   obstacleToggles: defaultObstacleToggles,
   pathResult: null,
   activePath: [],
+  originalPlannedPath: [],
+  latestReplanTelemetry: null,
   currentWaypointIndex: 0,
   simulationStatus: 'IDLE',
   playbackSpeed: 1, // 0.5, 1, 2, 5, 10
@@ -299,6 +304,9 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     } else if (selectedAlgorithm === 'GREEDY_BFS') {
       const solver = new GreedyBFSPathfinder();
       result = solver.findPath(terrain, startPoint, targetPoint);
+    } else if (selectedAlgorithm === 'DSTAR_LITE') {
+      const solver = new DStarLitePathfinder();
+      result = solver.findPath(terrain, startPoint, targetPoint);
     } else {
       // Manual navigation
       result = {
@@ -325,8 +333,11 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         pathResult: {
           ...result,
           path: finalPath,
+          originalPlannedPath: finalPath,
         },
         activePath: finalPath,
+        originalPlannedPath: finalPath,
+        latestReplanTelemetry: null,
         currentWaypointIndex: 0,
         simulationStatus: 'READY',
       });
@@ -335,7 +346,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         `Optimal trajectory calculated (${result.algorithm}): ${result.totalDistanceMeters}m, ${result.nodesExploredCount} nodes explored in ${result.computeTimeMs}ms`
       );
     } else {
-      set({ pathResult: result, activePath: [], simulationStatus: 'IDLE' });
+      set({ pathResult: result, activePath: [], originalPlannedPath: [], simulationStatus: 'IDLE' });
       get().addMissionEvent('ALERT', `Path planning failure: ${result.failureReason}`);
     }
 
@@ -509,6 +520,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       manualControls: state.manualInput,
       rerouteCount: state.rerouteCount,
       isAutonomous,
+      algorithm: state.selectedAlgorithm,
     });
 
     // Add any newly emitted simulation events
@@ -565,6 +577,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         rerouteCount: stepResult.rerouteCount,
         activePath: stepResult.activePath,
         currentWaypointIndex: stepResult.nextWaypointIndex,
+        latestReplanTelemetry: stepResult.replanTelemetry || state.latestReplanTelemetry,
         missionResults: results,
       });
       return;
@@ -575,6 +588,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       simulationStatus: stepResult.simulationStatus,
       activePath: stepResult.activePath,
       currentWaypointIndex: stepResult.nextWaypointIndex,
+      latestReplanTelemetry: stepResult.replanTelemetry || s.latestReplanTelemetry,
       pathResult: s.pathResult
         ? {
             ...s.pathResult,

@@ -10,6 +10,7 @@ import {
 import { AStarPathfinder } from './AStar';
 import { DijkstraPathfinder } from './Dijkstra';
 import { GreedyBFSPathfinder } from './GreedyBFS';
+import { DStarLitePathfinder } from './DStarLite';
 
 export class AlgorithmComparator {
   /**
@@ -21,7 +22,7 @@ export class AlgorithmComparator {
     start: Point2D,
     target: Point2D,
     options: PathfindingOptions = {},
-    algorithms: AlgorithmType[] = ['ASTAR', 'DIJKSTRA', 'GREEDY_BFS']
+    algorithms: AlgorithmType[] = ['ASTAR', 'DIJKSTRA', 'GREEDY_BFS', 'DSTAR_LITE']
   ): AlgorithmComparisonResult {
     const results: Partial<Record<AlgorithmType, PathfindingResult>> = {};
     const comparison: AlgorithmComparisonItem[] = [];
@@ -42,6 +43,11 @@ export class AlgorithmComparator {
         }
         case 'GREEDY_BFS': {
           const solver = new GreedyBFSPathfinder();
+          result = solver.findPath(grid, start, target, options);
+          break;
+        }
+        case 'DSTAR_LITE': {
+          const solver = new DStarLitePathfinder();
           result = solver.findPath(grid, start, target, options);
           break;
         }

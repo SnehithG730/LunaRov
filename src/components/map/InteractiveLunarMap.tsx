@@ -178,6 +178,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
   const startPoint = useMissionStore((s) => s.startPoint);
   const targetPoint = useMissionStore((s) => s.targetPoint);
   const activePath = useMissionStore((s) => s.activePath);
+  const originalPlannedPath = useMissionStore((s) => s.originalPlannedPath);
   const telemetryHistory = useMissionStore((s) => s.telemetryHistory);
   const setStartPoint = useMissionStore((s) => s.setStartPoint);
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
@@ -226,6 +227,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
   const wheelsRef = useRef<THREE.Mesh[]>([]);
   const lidarDishRef = useRef<THREE.Mesh | null>(null);
   const plannedPathLineRef = useRef<THREE.Line | null>(null);
+  const originalPathLineRef = useRef<THREE.Line | null>(null);
   const travelledPathLineRef = useRef<THREE.Line | null>(null);
   const startMarkerRef = useRef<THREE.Group | null>(null);
   const destMarkerRef = useRef<THREE.Group | null>(null);
@@ -984,6 +986,48 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
     const halfW = (width * resolution) / 2;
     const halfH = (height * resolution) / 2;
 
+    // --- Original Planned Path Ghost Trail (Rendered if dynamic replanning altered active path) ---
+    if (originalPathLineRef.current) {
+      scene.remove(originalPathLineRef.current);
+      originalPathLineRef.current.geometry.dispose();
+      (originalPathLineRef.current.material as THREE.Material).dispose();
+      originalPathLineRef.current = null;
+    }
+
+    const hasReplanned =
+      originalPlannedPath &&
+      originalPlannedPath.length >= 2 &&
+      activePath &&
+      (originalPlannedPath.length !== activePath.length || originalPlannedPath !== activePath);
+
+    if (hasReplanned) {
+      const origPoints: THREE.Vector3[] = [];
+      originalPlannedPath.forEach((pt) => {
+        const px = pt.x * resolution - halfW;
+        const pz = pt.y * resolution - halfH;
+        const gx = Math.max(0, Math.min(width - 1, Math.round(pt.x)));
+        const gy = Math.max(0, Math.min(height - 1, Math.round(pt.y)));
+        const py = (cells[gy]?.[gx]?.elevation ?? 0) + 0.3;
+        origPoints.push(new THREE.Vector3(px, py, pz));
+      });
+
+      const origCurve = new THREE.CatmullRomCurve3(origPoints, false, 'catmullrom', 0.15);
+      const smoothOrigPoints = origCurve.getPoints(Math.max(50, origPoints.length * 3));
+      const origLineGeo = new THREE.BufferGeometry().setFromPoints(smoothOrigPoints);
+      const origLineMat = new THREE.LineDashedMaterial({
+        color: 0xc084fc,
+        dashSize: 1.5,
+        gapSize: 0.8,
+        transparent: true,
+        opacity: 0.5,
+        linewidth: 2,
+      });
+      const origLine = new THREE.Line(origLineGeo, origLineMat);
+      origLine.computeLineDistances();
+      scene.add(origLine);
+      originalPathLineRef.current = origLine;
+    }
+
     // --- Planned Path (Bright Cyan Technical Line) ---
     if (plannedPathLineRef.current) {
       scene.remove(plannedPathLineRef.current);
@@ -1044,7 +1088,7 @@ export const InteractiveLunarMap: React.FC<InteractiveLunarMapProps> = ({
       scene.add(trailLine);
       travelledPathLineRef.current = trailLine;
     }
-  }, [activePath, telemetryHistory, terrain]);
+  }, [activePath, originalPlannedPath, telemetryHistory, terrain]);
 
   // --- Dynamic Autonomous Hazard Detection & Avoidance 3D Holographic Overlay ---
   useEffect(() => {

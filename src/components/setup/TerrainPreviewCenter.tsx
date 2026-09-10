@@ -32,6 +32,7 @@ export const TerrainPreviewCenter: React.FC = () => {
     setTargetPoint,
     pathResult,
     activePath,
+    originalPlannedPath,
     setEditorBrush,
     applyBrushAt,
   } = useMissionStore();
@@ -367,6 +368,25 @@ export const TerrainPreviewCenter: React.FC = () => {
       for (const node of pathResult.exploredNodes) {
         ctx.fillRect(node.x * cw, node.y * ch, cw, ch);
       }
+    }
+
+    // 4.5. Draw Original Ghost Trajectory if replanned (Visually distinguish original vs replanned path)
+    if (
+      originalPlannedPath &&
+      originalPlannedPath.length > 1 &&
+      activePath &&
+      (originalPlannedPath.length !== activePath.length || originalPlannedPath[0] !== activePath[0] || originalPlannedPath !== activePath)
+    ) {
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+      ctx.lineWidth = 2.0;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(originalPlannedPath[0].x * cw + cw / 2, originalPlannedPath[0].y * ch + ch / 2);
+      for (let i = 1; i < originalPlannedPath.length; i++) {
+        ctx.lineTo(originalPlannedPath[i].x * cw + cw / 2, originalPlannedPath[i].y * ch + ch / 2);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     // 5. Draw Active Smooth Path Trajectory

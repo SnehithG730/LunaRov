@@ -32,7 +32,7 @@ export const AlgorithmComparisonTable: React.FC<AlgorithmComparisonTableProps> =
       startPoint,
       targetPoint,
       {},
-      ['ASTAR', 'DIJKSTRA', 'GREEDY_BFS']
+      ['DSTAR_LITE', 'ASTAR', 'DIJKSTRA', 'GREEDY_BFS']
     );
   }, [terrain, startPoint, targetPoint]);
 
@@ -46,7 +46,7 @@ export const AlgorithmComparisonTable: React.FC<AlgorithmComparisonTableProps> =
         startPoint,
         targetPoint,
         {},
-        ['ASTAR', 'DIJKSTRA', 'GREEDY_BFS']
+        ['DSTAR_LITE', 'ASTAR', 'DIJKSTRA', 'GREEDY_BFS']
       );
       setManualOverride(results);
       setIsEvaluating(false);
@@ -55,6 +55,8 @@ export const AlgorithmComparisonTable: React.FC<AlgorithmComparisonTableProps> =
 
   const getAlgoDisplayName = (algo: AlgorithmType) => {
     switch (algo) {
+      case 'DSTAR_LITE':
+        return 'D* Lite (Dynamic Replanner)';
       case 'ASTAR':
         return 'A* Heuristic (f = g + h)';
       case 'DIJKSTRA':

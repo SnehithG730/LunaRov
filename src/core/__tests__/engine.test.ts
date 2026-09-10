@@ -51,6 +51,9 @@ console.log('>>> ALL 5 SIMULATION ENGINE TESTS PASSED SUCCESSFULLY! <<<\n');
 // Trigger Pathfinding Unit Tests
 import './pathfinding.test';
 
+// Trigger D* Lite Pathfinding Unit Tests
+import './dstarLite.test';
+
 // Trigger Rover Simulation Engine Unit Tests
 import './simulationEngine.test';
 

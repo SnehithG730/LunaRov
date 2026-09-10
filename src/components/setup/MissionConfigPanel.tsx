@@ -325,8 +325,14 @@ export const MissionConfigPanel: React.FC = () => {
             <span className="text-[10px] font-mono text-slate-500">Heuristic Engine</span>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {[
+              {
+                id: 'DSTAR_LITE' as AlgorithmType,
+                name: 'D* Lite Dynamic Replanner',
+                desc: 'D* Lite dynamically updates the rover\'s route when the environment changes. Incremental graph repair for real-time hazard avoidance.',
+                tag: 'DYNAMIC',
+              },
               {
                 id: 'ASTAR' as AlgorithmType,
                 name: 'A* Search Algorithm',

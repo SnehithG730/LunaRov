@@ -39,6 +39,7 @@ export const LeftMissionControls: React.FC = () => {
   const regenerateTerrain = useMissionStore((s) => s.regenerateTerrain);
 
   const algorithms: { id: AlgorithmType; label: string; tag: string; desc: string }[] = [
+    { id: 'DSTAR_LITE', label: 'D* LITE', tag: 'DYNAMIC', desc: 'D* Lite dynamically updates the rover\'s route when the environment changes.' },
     { id: 'ASTAR', label: 'A* HEURISTIC', tag: 'OPTIMAL', desc: 'Slope-aware octile heuristic. Guaranteed shortest cost.' },
     { id: 'DIJKSTRA', label: 'DIJKSTRA', tag: 'UNIFORM', desc: 'Explores cost contours uniformly without directional heuristic.' },
     { id: 'GREEDY_BFS', label: 'GREEDY BFS', tag: 'SPEED', desc: 'Prioritizes Euclidean/Octile distance directly to target.' },

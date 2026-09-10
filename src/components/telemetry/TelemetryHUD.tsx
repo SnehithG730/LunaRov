@@ -11,6 +11,9 @@ export const TelemetryHUD: React.FC = () => {
   const sensorScan = useMissionStore((s) => s.sensorScan);
   const rerouteCount = useMissionStore((s) => s.rerouteCount);
 
+  const latestReplanTelemetry = useMissionStore((s) => s.latestReplanTelemetry);
+  const selectedAlgorithm = useMissionStore((s) => s.selectedAlgorithm);
+
   const curCellX = Math.max(0, Math.min(terrain.width - 1, Math.round(roverState.x)));
   const curCellY = Math.max(0, Math.min(terrain.height - 1, Math.round(roverState.y)));
   const currentCell = terrain.cells[curCellY]?.[curCellX];
@@ -25,7 +28,14 @@ export const TelemetryHUD: React.FC = () => {
           <Activity className="w-4 h-4 text-cyan-400" />
           <span className="font-bold text-gray-200">LIVE TELEMETRY STREAM</span>
         </div>
-        <span className="text-[10px] text-cyan-400 font-semibold animate-pulse">50 Hz TELEMETRY LINK</span>
+        <div className="flex items-center gap-2">
+          {selectedAlgorithm === 'DSTAR_LITE' && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700 font-bold">
+              D* LITE ACTIVE
+            </span>
+          )}
+          <span className="text-[10px] text-cyan-400 font-semibold animate-pulse">50 Hz TELEMETRY LINK</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -135,6 +145,25 @@ export const TelemetryHUD: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Dynamic D* Lite Replanning Telemetry Bar (if replanning occurred) */}
+      {rerouteCount > 0 && latestReplanTelemetry && (
+        <div className="p-2.5 rounded-lg bg-[#081226] border border-cyan-800/60 text-[10.5px] space-y-1 text-cyan-200">
+          <div className="flex justify-between items-center border-b border-cyan-900/50 pb-1">
+            <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              DYNAMIC REPLAN TELEMETRY (D* LITE)
+            </span>
+            <span className="text-[9.5px] text-gray-400">Total Replans: {rerouteCount}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5 text-gray-300">
+            <div>Nodes Updated: <strong className="text-cyan-300">{latestReplanTelemetry.nodesUpdated}</strong></div>
+            <div>Path Before: <strong className="text-white">{latestReplanTelemetry.pathLengthBeforeMeters.toFixed(1)} m</strong></div>
+            <div>Path After: <strong className="text-white">{latestReplanTelemetry.pathLengthAfterMeters.toFixed(1)} m</strong></div>
+            <div>Added Detour (Δd): <strong className="text-amber-300">+{latestReplanTelemetry.additionalDistanceMeters.toFixed(1)} m</strong></div>
+          </div>
+        </div>
+      )}
 
       {/* Traversal Summary Pill Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-cyan-950 text-[10px] text-gray-400">

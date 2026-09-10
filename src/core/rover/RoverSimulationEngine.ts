@@ -1,6 +1,6 @@
 import { RoverConfig, RoverState, TelemetryPoint } from '@/types/rover';
 import { TerrainGrid, TerrainCell } from '@/types/terrain';
-import { Point2D } from '@/types/pathfinding';
+import { Point2D, AlgorithmType, ReplanTelemetry } from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent } from '@/types/mission';
 import { RoverKinematics } from './RoverKinematics';
 import { EnergyModel } from './EnergyModel';
@@ -25,6 +25,7 @@ export interface SimulationStepInput {
   manualControls?: ManualControlsInput;
   rerouteCount: number;
   isAutonomous: boolean;
+  algorithm?: AlgorithmType;
 }
 
 export interface SimulationStepResult {
@@ -38,6 +39,7 @@ export interface SimulationStepResult {
   telemetry: TelemetryPoint;
   isFinished: boolean;
   finishOutcome?: 'SUCCESS' | 'OBSTACLE_COLLISION' | 'BATTERY_DEPLETED' | 'ABORTED';
+  replanTelemetry?: ReplanTelemetry;
 }
 
 /**
@@ -119,6 +121,7 @@ export class RoverSimulationEngine {
     //   Step 3: CALCULATE a new path safely around the hazard
     //   Step 4: RESUME navigation towards destination
     let didReplanInThisStep = false;
+    let latestReplanTelemetry: ReplanTelemetry | undefined = undefined;
 
     // Clear avoidedHazard if the rover has moved sufficiently far from it or passed it
     if (updatedState.avoidedHazard) {
@@ -182,31 +185,41 @@ export class RoverSimulationEngine {
           message: `OBSTACLE IDENTIFIED at [${blockingCell.x}, ${blockingCell.y}] (${obstacleDesc}) ${scan.closestHazardDistMeters}m ahead. Halting rover for replanning.`,
         });
 
-        // Step 3: CALCULATE A NEW PATH SAFELY AROUND THE HAZARD
+        // Step 3: CALCULATE A NEW PATH SAFELY AROUND THE HAZARD (using D* Lite / Dynamic Replanner)
         const replanResult = DynamicReplanner.replan(
           terrain,
           { x: updatedState.x, y: updatedState.y },
           updatedPath.slice(nextWaypointIdx),
           targetPoint,
-          { x: blockingCell.x, y: blockingCell.y }
+          { x: blockingCell.x, y: blockingCell.y },
+          input.algorithm || 'DSTAR_LITE',
+          nextRerouteCount + 1
         );
 
         // Step 4: RESUME NAVIGATION ALONG DETOUR
         if (replanResult.success && replanResult.path.length > 0) {
           updatedPath = replanResult.path;
           updatedState.avoidedHazard = { x: blockingCell.x, y: blockingCell.y };
+          latestReplanTelemetry = replanResult.replanTelemetry;
+
           // Advance immediately to the forward detour waypoint so rover steers & drives around obstacle
           const dToP0 = Math.hypot(updatedPath[0].x - updatedState.x, updatedPath[0].y - updatedState.y) * terrain.resolution;
           nextWaypointIdx = (dToP0 <= 0.8 && updatedPath.length > 1) ? 1 : 0;
           nextRerouteCount += 1;
           currentStatus = 'RUNNING';
 
+          const telemetryMetrics = replanResult.replanTelemetry;
+          const deltaMsg = telemetryMetrics && telemetryMetrics.additionalDistanceMeters > 0
+            ? ` (+${telemetryMetrics.additionalDistanceMeters.toFixed(1)}m added)`
+            : '';
+          const nodesMsg = telemetryMetrics ? ` | ${telemetryMetrics.nodesUpdated} nodes updated` : '';
+
           newEvents.push({
             id: `evt-replan-ok-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             timestamp: Date.now(),
             simTimeSeconds: Number(updatedState.elapsedTimeSeconds.toFixed(1)),
             type: 'SUCCESS',
-            message: `REROUTE COMPUTED: Detour path (${replanResult.totalDistanceMeters.toFixed(1)}m) safe around obstacle. Resuming mission navigation.`,
+            message: `ROUTE REPLANNED (${input.algorithm === 'DSTAR_LITE' ? 'D* Lite' : 'Dynamic Solver'}): Detour path (${replanResult.totalDistanceMeters.toFixed(1)}m${deltaMsg}${nodesMsg}) safe around obstacle. Resuming mission navigation.`,
           });
         } else {
           // Path completely obstructed
@@ -373,6 +386,7 @@ export class RoverSimulationEngine {
       rerouteCount: nextRerouteCount,
       telemetry,
       isFinished: false,
+      replanTelemetry: latestReplanTelemetry,
     };
   }
 

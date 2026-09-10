@@ -1,6 +1,6 @@
 import { RoverConfig, RoverState, TelemetryPoint } from '@/types/rover';
 import { TerrainGrid, TerrainCell } from '@/types/terrain';
-import { Point2D } from '@/types/pathfinding';
+import { Point2D, PathfindingResult } from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent } from '@/types/mission';
 import { RoverKinematics } from './RoverKinematics';
 import { EnergyModel } from './EnergyModel';
@@ -31,6 +31,7 @@ export interface SimulationStepResult {
   updatedState: RoverState;
   nextWaypointIndex: number;
   activePath: Point2D[];
+  newPathResult?: PathfindingResult;
   simulationStatus: SimulationStatus;
   sensorScan: SensorScanResult;
   newEvents: MissionEvent[];
@@ -118,10 +119,12 @@ export class RoverSimulationEngine {
     //   Step 2: IDENTIFY obstacle details
     //   Step 3: CALCULATE a new path around the hazard
     //   Step 4: RESUME navigation towards destination
+    let newPathResult = undefined;
+
     if (isAutonomous && scan.hasHazardAhead && scan.closestHazardDistMeters < config.sensorRangeMeters * 0.85) {
-      const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + 6);
+      const upcomingWaypoints = updatedPath.slice(nextWaypointIdx, nextWaypointIdx + 8);
       const blockingCell = upcomingWaypoints
-        .map((p) => terrain.cells[p.y]?.[p.x])
+        .map((p) => terrain.cells[Math.round(p.y)]?.[Math.round(p.x)])
         .find((c) => c && (c.isObstacle || c.slope >= 22.0));
 
       if (blockingCell) {
@@ -143,20 +146,43 @@ export class RoverSimulationEngine {
           message: `OBSTACLE IDENTIFIED at [${blockingCell.x}, ${blockingCell.y}] (${obstacleDesc}) ${scan.closestHazardDistMeters}m ahead. Halting rover for replanning.`,
         });
 
-        // Step 3: CALCULATE A NEW PATH
+        // Collect custom blocked nodes around the hazard with safety buffer
+        const blockedNodes: Point2D[] = [
+          { x: blockingCell.x, y: blockingCell.y },
+          { x: blockingCell.x + 1, y: blockingCell.y },
+          { x: blockingCell.x - 1, y: blockingCell.y },
+          { x: blockingCell.x, y: blockingCell.y + 1 },
+          { x: blockingCell.x, y: blockingCell.y - 1 },
+        ].filter((p) => p.x >= 0 && p.x < terrain.width && p.y >= 0 && p.y < terrain.height);
+
+        // Step 3: CALCULATE A NEW DETOUR PATH
         const replanResult = DynamicReplanner.replan(
           terrain,
           { x: updatedState.x, y: updatedState.y },
           updatedPath.slice(nextWaypointIdx),
-          targetPoint
+          targetPoint,
+          { customBlockedNodes: blockedNodes }
         );
 
         // Step 4: RESUME NAVIGATION
         if (replanResult.success && replanResult.path.length > 0) {
           updatedPath = replanResult.path;
-          nextWaypointIdx = 0;
+          newPathResult = replanResult;
+
+          // Target the first forward waypoint along the detour curve that is distinct from current rover location
+          let nextIdx = 1;
+          while (
+            nextIdx < updatedPath.length - 1 &&
+            Math.hypot(updatedPath[nextIdx].x - updatedState.x, updatedPath[nextIdx].y - updatedState.y) < 0.4
+          ) {
+            nextIdx++;
+          }
+          nextWaypointIdx = nextIdx;
           nextRerouteCount += 1;
           currentStatus = 'RUNNING';
+
+          // Give initial gentle acceleration to immediately begin moving along the detour curve
+          updatedState.velocity = Math.min(0.25, config.maxSpeed * 0.3);
 
           newEvents.push({
             id: `evt-replan-ok-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -322,6 +348,7 @@ export class RoverSimulationEngine {
       updatedState,
       nextWaypointIndex: nextWaypointIdx,
       activePath: updatedPath,
+      newPathResult,
       simulationStatus: currentStatus,
       sensorScan: scan,
       newEvents,

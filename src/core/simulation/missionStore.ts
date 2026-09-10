@@ -1,12 +1,21 @@
 import { create } from 'zustand';
 import { TerrainGrid, TerrainType, ObstacleToggles } from '@/types/terrain';
 import { RoverConfig, RoverState, TelemetryPoint } from '@/types/rover';
-import { AlgorithmType, Point2D, PathfindingResult } from '@/types/pathfinding';
+import {
+  AlgorithmType,
+  Point2D,
+  PathfindingResult,
+  OptimizationStrategy,
+  ObjectiveWeights,
+  OPTIMIZATION_STRATEGY_PRESETS,
+  StrategyComparisonResult,
+} from '@/types/pathfinding';
 import { SimulationStatus, MissionEvent, MissionResults, SavedMission } from '@/types/mission';
 import { TerrainGenerator } from '@/core/terrain/TerrainGenerator';
 import { AStarPathfinder } from '@/core/pathfinding/AStar';
 import { DijkstraPathfinder } from '@/core/pathfinding/Dijkstra';
 import { GreedyBFSPathfinder } from '@/core/pathfinding/GreedyBFS';
+import { StrategyComparator } from '@/core/pathfinding/StrategyComparator';
 import { RoverSimulationEngine } from '@/core/rover/RoverSimulationEngine';
 import { SensorScanResult } from '@/core/simulation/CollisionSystem';
 import { DEFAULT_ROVER_CONFIG, DEFAULT_GRID_SIZE } from '@/lib/constants';
@@ -20,6 +29,10 @@ export interface MissionStoreState {
   startPoint: Point2D;
   targetPoint: Point2D;
   selectedAlgorithm: AlgorithmType;
+  optimizationStrategy: OptimizationStrategy;
+  objectiveWeights: ObjectiveWeights;
+  strategyComparisonResult: StrategyComparisonResult | null;
+  costHeatmapActive: boolean;
   obstacleToggles: ObstacleToggles;
   pathResult: PathfindingResult | null;
   activePath: Point2D[];
@@ -44,6 +57,10 @@ export interface MissionStoreState {
   setStartPoint: (p: Point2D) => void;
   setTargetPoint: (p: Point2D) => void;
   setAlgorithm: (algo: AlgorithmType) => void;
+  setOptimizationStrategy: (strategy: OptimizationStrategy) => void;
+  setObjectiveWeights: (weights: Partial<ObjectiveWeights>) => void;
+  setCostHeatmapActive: (active: boolean) => void;
+  compareAllStrategies: () => StrategyComparisonResult;
   validateMission: () => { valid: boolean; errors: string[] };
   computePath: () => PathfindingResult | null;
   startSimulation: () => void;
@@ -99,6 +116,10 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   startPoint: defaultStart,
   targetPoint: defaultTarget,
   selectedAlgorithm: 'ASTAR',
+  optimizationStrategy: 'BALANCED',
+  objectiveWeights: { ...OPTIMIZATION_STRATEGY_PRESETS.BALANCED },
+  strategyComparisonResult: null,
+  costHeatmapActive: false,
   obstacleToggles: defaultObstacleToggles,
   pathResult: null,
   activePath: [],
@@ -136,6 +157,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     set({
       terrain: newGrid,
       pathResult: null,
+      strategyComparisonResult: null,
       activePath: [],
       currentWaypointIndex: 0,
       simulationStatus: 'IDLE',
@@ -152,6 +174,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     set({
       terrain: newGrid,
       pathResult: null,
+      strategyComparisonResult: null,
       activePath: [],
       currentWaypointIndex: 0,
       simulationStatus: 'IDLE',
@@ -170,6 +193,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     set({
       terrain: newGrid,
       pathResult: null,
+      strategyComparisonResult: null,
       activePath: [],
       currentWaypointIndex: 0,
       simulationStatus: 'IDLE',
@@ -186,6 +210,9 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         batteryRemainingWh: config.batteryCapacityWh ?? state.roverState.batteryRemainingWh,
       },
     }));
+    if (get().simulationStatus === 'IDLE' || get().simulationStatus === 'READY') {
+      get().computePath();
+    }
   },
 
   setStartPoint: (p) => {
@@ -201,6 +228,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
         goalReached: false,
       },
       pathResult: null,
+      strategyComparisonResult: null,
       activePath: [],
       currentWaypointIndex: 0,
       simulationStatus: 'IDLE',
@@ -209,16 +237,55 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   setTargetPoint: (p) => {
-    set({ targetPoint: p, pathResult: null, activePath: [], currentWaypointIndex: 0, simulationStatus: 'IDLE' });
+    set({ targetPoint: p, pathResult: null, strategyComparisonResult: null, activePath: [], currentWaypointIndex: 0, simulationStatus: 'IDLE' });
     get().addMissionEvent('INFO', `Destination target set to [${p.x}, ${p.y}]`);
   },
 
   setAlgorithm: (algo) => {
     set({ selectedAlgorithm: algo });
     get().addMissionEvent('INFO', `Swapped pathfinding algorithm: ${algo}`);
-    if (get().simulationStatus === 'IDLE' || get().simulationStatus === 'PLANNING') {
+    if (get().simulationStatus === 'IDLE' || get().simulationStatus === 'READY') {
       get().computePath();
     }
+  },
+
+  setOptimizationStrategy: (strategy) => {
+    const weights = strategy === 'CUSTOM'
+      ? get().objectiveWeights
+      : OPTIMIZATION_STRATEGY_PRESETS[strategy as Exclude<OptimizationStrategy, 'CUSTOM'>] || OPTIMIZATION_STRATEGY_PRESETS.BALANCED;
+
+    set({
+      optimizationStrategy: strategy,
+      objectiveWeights: { ...weights },
+    });
+    get().addMissionEvent('INFO', `Optimization Strategy set to: ${strategy}`);
+    if (get().simulationStatus === 'IDLE' || get().simulationStatus === 'READY') {
+      get().computePath();
+    }
+  },
+
+  setObjectiveWeights: (weightsUpdate) => {
+    const updated = { ...get().objectiveWeights, ...weightsUpdate };
+    set({
+      optimizationStrategy: 'CUSTOM',
+      objectiveWeights: updated,
+    });
+    if (get().simulationStatus === 'IDLE' || get().simulationStatus === 'READY') {
+      get().computePath();
+    }
+  },
+
+  setCostHeatmapActive: (active) => set({ costHeatmapActive: active }),
+
+  compareAllStrategies: () => {
+    const { terrain, startPoint, targetPoint, roverConfig, objectiveWeights, optimizationStrategy } = get();
+    const result = StrategyComparator.compare(terrain, startPoint, targetPoint, {
+      roverConfig,
+      weights: objectiveWeights,
+      strategy: optimizationStrategy,
+    });
+    set({ strategyComparisonResult: result });
+    return result;
   },
 
   validateMission: () => {
@@ -284,30 +351,44 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   computePath: () => {
-    const { terrain, startPoint, targetPoint, selectedAlgorithm } = get();
+    const { terrain, startPoint, targetPoint, selectedAlgorithm, optimizationStrategy, objectiveWeights, roverConfig } = get();
     set({ simulationStatus: 'CALCULATING' });
+
+    const pathOptions = {
+      strategy: optimizationStrategy,
+      weights: objectiveWeights,
+      roverConfig,
+    };
 
     let result: PathfindingResult;
 
     if (selectedAlgorithm === 'ASTAR') {
       const solver = new AStarPathfinder();
-      result = solver.findPath(terrain, startPoint, targetPoint);
+      result = solver.findPath(terrain, startPoint, targetPoint, pathOptions);
     } else if (selectedAlgorithm === 'DIJKSTRA') {
       const solver = new DijkstraPathfinder();
-      result = solver.findPath(terrain, startPoint, targetPoint);
+      result = solver.findPath(terrain, startPoint, targetPoint, pathOptions);
     } else if (selectedAlgorithm === 'GREEDY_BFS') {
       const solver = new GreedyBFSPathfinder();
-      result = solver.findPath(terrain, startPoint, targetPoint);
+      result = solver.findPath(terrain, startPoint, targetPoint, pathOptions);
     } else {
       // Manual navigation
       result = {
         algorithm: 'MANUAL',
+        strategy: optimizationStrategy,
+        weights: objectiveWeights,
         path: [startPoint, targetPoint],
         exploredNodes: [],
         totalDistance: 0,
         totalDistanceMeters: 0,
         totalMovementCost: 0,
         estimatedEnergyWh: 0,
+        estimatedTravelTimeSeconds: 0,
+        averageSlopeDeg: 0,
+        maxSlopeDeg: 0,
+        riskScore: 0,
+        batteryRemainingPct: 100,
+        feasibility: 'FEASIBLE',
         nodesEvaluated: 0,
         nodesExploredCount: 0,
         executionTimeMs: 0,
@@ -325,7 +406,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       });
       get().addMissionEvent(
         'SUCCESS',
-        `Optimal trajectory calculated (${result.algorithm}): ${result.totalDistanceMeters}m, ${result.nodesExploredCount} nodes explored in ${result.computeTimeMs}ms`
+        `Optimal trajectory calculated (${result.algorithm} / ${optimizationStrategy}): ${result.totalDistanceMeters}m, ${result.estimatedEnergyWh}Wh (${result.feasibility})`
       );
     } else {
       set({ pathResult: result, activePath: [], simulationStatus: 'IDLE' });
@@ -444,7 +525,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       }
     }
 
-    set({ terrain: { ...terrain, cells: newCells } });
+    set({ terrain: { ...terrain, cells: newCells }, strategyComparisonResult: null });
     get().addMissionEvent('INFO', `Custom brush [${editorBrush}] applied at [${x}, ${y}]`);
     get().computePath();
   },
@@ -551,6 +632,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       roverState: stepResult.updatedState,
       simulationStatus: stepResult.simulationStatus,
       activePath: stepResult.activePath,
+      pathResult: stepResult.newPathResult || s.pathResult,
       currentWaypointIndex: stepResult.nextWaypointIndex,
       sensorScan: stepResult.sensorScan,
       rerouteCount: stepResult.rerouteCount,
@@ -590,6 +672,7 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       currentWaypointIndex: 0,
       activePath: [],
       pathResult: null,
+      strategyComparisonResult: null,
       simulationStatus: 'IDLE',
       telemetryHistory: mission.results?.telemetryLog || [],
       missionResults: mission.results || null,
@@ -600,3 +683,4 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     get().computePath();
   },
 }));
+

@@ -160,4 +160,23 @@ if (!comparison.fastest || !comparison.shortestDistance || !comparison.fewestNod
 }
 console.log('  ✓ AlgorithmComparator successfully executed and evaluated all algorithms');
 
-console.log('\n>>> ALL 8 PATHFINDING ENGINE UNIT TESTS PASSED SUCCESSFULLY! <<<\n');
+// ==========================================
+// TEST 9: Safe Curved Trajectory Generation
+// ==========================================
+console.log('\n[TEST 9] Verifying Curved Trajectory Generation & Obstacle Safety...');
+const curvedTrajectory = PathOptimizer.smoothCurvedPath(grid, optimized.path);
+if (!Array.isArray(curvedTrajectory) || curvedTrajectory.length < optimized.path.length) {
+  throw new Error('Curved trajectory generation failed to produce smooth points');
+}
+
+// Ensure every single curved point is strictly collision-free
+for (const pt of curvedTrajectory) {
+  const gx = Math.round(pt.x);
+  const gy = Math.round(pt.y);
+  if (grid.cells[gy][gx].isObstacle || grid.cells[gy][gx].slope >= 22.0) {
+    throw new Error(`Curved trajectory point [${pt.x}, ${pt.y}] intersected with an obstacle or excessive slope!`);
+  }
+}
+console.log(`  ✓ TrajectoryCurves produced ${curvedTrajectory.length} smooth curve points with 100% obstacle safety clearance`);
+
+console.log('\n>>> ALL 9 PATHFINDING ENGINE UNIT TESTS PASSED SUCCESSFULLY! <<<\n');

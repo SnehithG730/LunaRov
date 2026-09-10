@@ -3,6 +3,9 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useMissionStore } from '@/core/simulation/missionStore';
 import { TERRAIN_PALETTES } from '@/lib/constants';
+import { calculateMultiObjectiveTransitionCost } from '@/core/pathfinding/PathfinderInterface';
+import { STRATEGY_METADATA } from '@/types/pathfinding';
+import { Flame, ShieldCheck, Zap } from 'lucide-react';
 
 interface MapView2DProps {
   clickMode?: 'NONE' | 'SET_START' | 'SET_TARGET' | 'BRUSH';
@@ -21,6 +24,9 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
   const currentWaypointIndex = useMissionStore((s) => s.currentWaypointIndex);
   const editorBrush = useMissionStore((s) => s.editorBrush);
   const sensorScan = useMissionStore((s) => s.sensorScan);
+  const optimizationStrategy = useMissionStore((s) => s.optimizationStrategy);
+  const objectiveWeights = useMissionStore((s) => s.objectiveWeights);
+  const costHeatmapActive = useMissionStore((s) => s.costHeatmapActive);
   const setStartPoint = useMissionStore((s) => s.setStartPoint);
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
   const applyBrushAt = useMissionStore((s) => s.applyBrushAt);
@@ -50,37 +56,78 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
 
     ctx.clearRect(0, 0, width, height);
 
-    // 1. Draw Terrain Elevation Cells
+    // 1. Draw Terrain Elevation Cells or Cost Heatmap
     const { minElevation, maxElevation } = terrain;
     const elevRange = Math.max(1, maxElevation - minElevation);
 
     for (let y = 0; y < terrain.height; y++) {
       for (let x = 0; x < terrain.width; x++) {
         const cell = terrain.cells[y][x];
-        const normElev = (cell.elevation - minElevation) / elevRange; // 0 to 1
 
-        if (cell.isObstacle) {
-          // Dark hazard zone with hazard hatch
-          ctx.fillStyle = '#1e1014';
-          ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
-
-          ctx.fillStyle = '#dc2626';
-          ctx.fillRect(x * cellW + cellW * 0.25, y * cellH + cellH * 0.25, cellW * 0.5, cellH * 0.5);
-        } else {
-          // Lunar monochromatic elevation gradient: dark crater floor to bright highland
-          const brightness = Math.floor(18 + normElev * 95);
-          const r = Math.min(255, Math.floor(brightness * 0.9));
-          const g = Math.min(255, Math.floor(brightness * 0.95));
-          const b = Math.min(255, Math.floor(brightness * 1.1));
-
-          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-          ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
-
-          // Slope hazard shading (yellow/amber tint if slope > 15°)
-          if (cell.slope > 15.0) {
-            const hazardAlpha = Math.min(0.65, (cell.slope - 15) / 10);
-            ctx.fillStyle = `rgba(245, 158, 11, ${hazardAlpha})`;
+        if (costHeatmapActive) {
+          if (cell.isObstacle) {
+            ctx.fillStyle = '#1e1014';
             ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(x * cellW + cellW * 0.25, y * cellH + cellH * 0.25, cellW * 0.5, cellH * 0.5);
+          } else {
+            // Calculate multi-objective transition cost from flat baseline
+            const { totalCost } = calculateMultiObjectiveTransitionCost(
+              cell,
+              cell,
+              1.0,
+              terrain.resolution,
+              roverConfig,
+              objectiveWeights
+            );
+            const normalizedCost = Math.min(1.0, Math.max(0, (totalCost - 0.5) / 4.0));
+
+            // Heatmap color: Blue (0.0) -> Green (0.3) -> Yellow (0.6) -> Red (1.0)
+            let r = 0, g = 0, b = 0;
+            if (normalizedCost < 0.33) {
+              const t = normalizedCost / 0.33;
+              r = 10;
+              g = Math.floor(40 + t * 180);
+              b = Math.floor(180 - t * 40);
+            } else if (normalizedCost < 0.66) {
+              const t = (normalizedCost - 0.33) / 0.33;
+              r = Math.floor(20 + t * 220);
+              g = 220;
+              b = Math.floor(140 * (1 - t));
+            } else {
+              const t = (normalizedCost - 0.66) / 0.34;
+              r = 240;
+              g = Math.floor(220 * (1 - t));
+              b = 20;
+            }
+
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+          }
+        } else {
+          // Standard Lunar Monochromatic + Slope Tint
+          const normElev = (cell.elevation - minElevation) / elevRange; // 0 to 1
+
+          if (cell.isObstacle) {
+            ctx.fillStyle = '#1e1014';
+            ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(x * cellW + cellW * 0.25, y * cellH + cellH * 0.25, cellW * 0.5, cellH * 0.5);
+          } else {
+            const brightness = Math.floor(18 + normElev * 95);
+            const r = Math.min(255, Math.floor(brightness * 0.9));
+            const g = Math.min(255, Math.floor(brightness * 0.95));
+            const b = Math.min(255, Math.floor(brightness * 1.1));
+
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+
+            // Slope hazard shading (yellow/amber tint if slope > 15°)
+            if (cell.slope > 15.0) {
+              const hazardAlpha = Math.min(0.65, (cell.slope - 15) / 10);
+              ctx.fillStyle = `rgba(245, 158, 11, ${hazardAlpha})`;
+              ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+            }
           }
         }
       }
@@ -128,32 +175,46 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       ctx.setLineDash([]); // Reset dash
     }
 
-    // 5. Draw Planned Path (Bright Technical Line)
+    // 5. Draw Planned Path (Curved Trajectory with Strategy Color Glow)
     if (activePath.length > 1) {
-      ctx.strokeStyle = TERRAIN_PALETTES.PATH_PLANNED;
-      ctx.lineWidth = 2.8;
-      ctx.shadowColor = '#00f0ff';
-      ctx.shadowBlur = 8;
+      const stratColor = STRATEGY_METADATA[optimizationStrategy]?.color || '#00f0ff';
+
+      // Glow underlay
+      ctx.strokeStyle = `${stratColor}66`;
+      ctx.lineWidth = 5.0;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       ctx.beginPath();
-      for (let i = 0; i < activePath.length; i++) {
-        const pt = activePath[i];
-        const px = (pt.x + 0.5) * cellW;
-        const py = (pt.y + 0.5) * cellH;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+      const firstPx = (activePath[0].x + 0.5) * cellW;
+      const firstPy = (activePath[0].y + 0.5) * cellH;
+      ctx.moveTo(firstPx, firstPy);
+
+      for (let i = 1; i < activePath.length - 1; i++) {
+        const xc = ((activePath[i].x + activePath[i + 1].x) * 0.5 + 0.5) * cellW;
+        const yc = ((activePath[i].y + activePath[i + 1].y) * 0.5 + 0.5) * cellH;
+        const cpx = (activePath[i].x + 0.5) * cellW;
+        const cpy = (activePath[i].y + 0.5) * cellH;
+        ctx.quadraticCurveTo(cpx, cpy, xc, yc);
       }
+      const lastPt = activePath[activePath.length - 1];
+      ctx.lineTo((lastPt.x + 0.5) * cellW, (lastPt.y + 0.5) * cellH);
+      ctx.stroke();
+
+      // Sharp foreground laser line
+      ctx.strokeStyle = stratColor;
+      ctx.lineWidth = 2.4;
+      ctx.shadowColor = stratColor;
+      ctx.shadowBlur = 10;
       ctx.stroke();
       ctx.shadowBlur = 0; // reset
 
-      // Waypoint small dots
-      ctx.fillStyle = '#00f0ff';
-      for (let i = currentWaypointIndex; i < activePath.length; i += 3) {
+      // Waypoint small dots along remaining trajectory
+      ctx.fillStyle = stratColor;
+      for (let i = currentWaypointIndex; i < activePath.length; i += 2) {
         const pt = activePath[i];
         ctx.beginPath();
-        ctx.arc((pt.x + 0.5) * cellW, (pt.y + 0.5) * cellH, 2.0, 0, 2 * Math.PI);
+        ctx.arc((pt.x + 0.5) * cellW, (pt.y + 0.5) * cellH, 2.2, 0, 2 * Math.PI);
         ctx.fill();
       }
     }
@@ -243,6 +304,9 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     pathResult,
     currentWaypointIndex,
     sensorScan,
+    optimizationStrategy,
+    objectiveWeights,
+    costHeatmapActive,
   ]);
 
   useEffect(() => {
@@ -336,7 +400,26 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
         </div>
       )}
 
-      {/* Tactical Overlay Badges */}
+      {/* Strategy Indicator Badge (Top Right) */}
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-cyan-700/50 rounded-lg px-2.5 py-1 text-[10.5px] font-mono text-white shadow-lg pointer-events-none z-10">
+        <span className="text-slate-400">OBJECTIVE:</span>
+        <strong className="text-cyan-300 font-bold">{STRATEGY_METADATA[optimizationStrategy]?.label || optimizationStrategy}</strong>
+        {pathResult && (
+          <span
+            className={`text-[9px] px-1 py-0.2 rounded font-bold uppercase ml-1 ${
+              pathResult.feasibility === 'FEASIBLE'
+                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                : pathResult.feasibility === 'WARNING'
+                ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                : 'bg-red-950 text-red-300 border border-red-800'
+            }`}
+          >
+            {pathResult.feasibility}
+          </span>
+        )}
+      </div>
+
+      {/* Tactical Overlay Badges (Bottom Left) */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2 text-[10px] font-mono pointer-events-none">
         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/75 border border-emerald-500/30 text-emerald-400">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -350,7 +433,14 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
           <span className="w-2 h-2 rounded-sm bg-red-500" />
           HAZARD &gt;25°
         </div>
+        {costHeatmapActive && (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-400/50 text-cyan-300">
+            <Flame className="w-3 h-3 text-cyan-400" />
+            COST HEATMAP
+          </div>
+        )}
       </div>
     </div>
   );
 };
+

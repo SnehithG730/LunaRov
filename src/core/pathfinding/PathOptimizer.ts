@@ -1,6 +1,7 @@
 import { TerrainGrid, TerrainCell } from '@/types/terrain';
 import { Point2D, PathfindingOptions } from '@/types/pathfinding';
 import { isCellBlocked, resolveCellCost } from './PathfinderInterface';
+import { TrajectoryCurves } from './TrajectoryCurves';
 
 export class PathOptimizer {
   /**
@@ -36,6 +37,17 @@ export class PathOptimizer {
     }
 
     return optimized;
+  }
+
+  /**
+   * Generates a collision-safe, continuous curved trajectory from waypoints.
+   */
+  public static smoothCurvedPath(
+    grid: TerrainGrid,
+    waypoints: Point2D[],
+    options: PathfindingOptions = {}
+  ): Point2D[] {
+    return TrajectoryCurves.generateCurvedTrajectory(grid, waypoints, options);
   }
 
   /**

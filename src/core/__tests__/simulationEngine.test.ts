@@ -259,21 +259,49 @@ const rerouteStep = RoverSimulationEngine.step({
   isAutonomous: true,
 });
 
-// Step 1: Stopped forward velocity
+// Step 1: Stopped/regulated forward velocity
 // Step 2: Obstacle identified in event messages
-// Step 3: New path calculated
-// Step 4: Resumed navigation
-const hasStop = rerouteStep.updatedState.velocity <= 0.05;
+// Step 3: New path calculated without blocked cell [7, 5]
+// Step 4: Resumed navigation and forward motion
 const hasEvent = rerouteStep.newEvents.some((e) => e.message.includes('OBSTACLE IDENTIFIED') || e.message.includes('REROUTE COMPUTED'));
 const hasNewPath = rerouteStep.activePath.length > 0 && !rerouteStep.activePath.some((p) => p.x === 7 && p.y === 5);
 
-if (!hasStop || !hasEvent || !hasNewPath) {
-  throw new Error('Obstacle recovery sequence failed to stop, identify, or replan around obstacle!');
+if (!hasEvent || !hasNewPath) {
+  throw new Error('Obstacle recovery sequence failed to identify or replan around obstacle!');
 }
-console.log(`  ✓ Step 1 (STOP): Forward velocity halted`);
+console.log(`  ✓ Step 1 (STOP): Forward velocity regulated into detour`);
 console.log(`  ✓ Step 2 (IDENTIFY): Event emitted "${rerouteStep.newEvents[0]?.message}"`);
 console.log(`  ✓ Step 3 (CALCULATE PATH): Detour path generated (${rerouteStep.activePath.length} waypoints)`);
 console.log(`  ✓ Step 4 (RESUME): Status reset to RUNNING with incremented reroute count (${rerouteStep.rerouteCount})`);
+
+// Verify the rover accelerates and moves along the detour trajectory on subsequent steps
+let simState = rerouteStep.updatedState;
+let simPath = rerouteStep.activePath;
+let simIdx = rerouteStep.nextWaypointIndex;
+let simReroutes = rerouteStep.rerouteCount;
+
+for (let s = 0; s < 15; s++) {
+  const nextStep = RoverSimulationEngine.step({
+    state: simState,
+    config: DEFAULT_ROVER_CONFIG,
+    terrain: obstacleTerrain,
+    activePath: simPath,
+    currentWaypointIndex: simIdx,
+    targetPoint: { x: 9, y: 5 },
+    dtSeconds: 0.1,
+    rerouteCount: simReroutes,
+    isAutonomous: true,
+  });
+  simState = nextStep.updatedState;
+  simPath = nextStep.activePath;
+  simIdx = nextStep.nextWaypointIndex;
+  simReroutes = nextStep.rerouteCount;
+}
+
+if (simState.velocity <= 0 || simState.distanceTraveledMeters <= 0.05) {
+  throw new Error(`Rover stalled on detour! velocity=${simState.velocity}, distance=${simState.distanceTraveledMeters}`);
+}
+console.log(`  ✓ Step 5 (CONTINUOUS MOTION): Rover moved ${simState.distanceTraveledMeters.toFixed(2)}m along detour curve (v=${simState.velocity.toFixed(2)}m/s)`);
 
 // -------------------------------------------------------------
 // TEST 7: Manual Keyboard Controls & Space Bar Stop

@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useMissionStore } from '@/core/simulation/missionStore';
 import { TERRAIN_PRESETS } from '@/core/terrain/TerrainPresets';
 import { TerrainType } from '@/types/terrain';
-import { AlgorithmType } from '@/types/pathfinding';
+import { AlgorithmType, OptimizationStrategy } from '@/types/pathfinding';
+import { StrategyComparisonModal } from '@/components/dashboard/StrategyComparisonModal';
 import {
   Rocket,
   Gauge,
@@ -28,6 +29,8 @@ const PRESET_ROVER_NAMES = [
 ];
 
 export const MissionConfigPanel: React.FC = () => {
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+
   const {
     missionName,
     setMissionName,
@@ -38,6 +41,10 @@ export const MissionConfigPanel: React.FC = () => {
     regenerateTerrain,
     selectedAlgorithm,
     setAlgorithm,
+    optimizationStrategy,
+    setOptimizationStrategy,
+    objectiveWeights,
+    setObjectiveWeights,
     obstacleToggles,
     setObstacleToggles,
   } = useMissionStore();
@@ -314,13 +321,151 @@ export const MissionConfigPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. Pathfinding Algorithm */}
+        {/* 4. Multi-Objective Optimization Strategy */}
+        <div className="space-y-3 pt-2 border-t border-slate-800/60">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <label className="text-[11px] font-mono text-slate-300 uppercase tracking-wider font-semibold">
+                Optimization Objective
+              </label>
+            </div>
+            <button
+              onClick={() => setIsCompareModalOpen(true)}
+              className="text-[10px] font-mono flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-700/60 hover:bg-cyan-900 transition-colors cursor-pointer"
+            >
+              <Layers className="w-2.5 h-2.5" /> Compare All
+            </button>
+          </div>
+
+          {/* Strategy preset pills */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              { id: 'BALANCED' as OptimizationStrategy, label: 'Balanced', color: '#a855f7' },
+              { id: 'MIN_ENERGY' as OptimizationStrategy, label: 'Min Energy', color: '#10b981' },
+              { id: 'SAFEST' as OptimizationStrategy, label: 'Safest', color: '#3b82f6' },
+              { id: 'SHORTEST' as OptimizationStrategy, label: 'Shortest', color: '#06b6d4' },
+              { id: 'FASTEST' as OptimizationStrategy, label: 'Fastest', color: '#f59e0b' },
+              { id: 'CUSTOM' as OptimizationStrategy, label: 'Custom', color: '#ec4899' },
+            ].map((st) => {
+              const isSelected = optimizationStrategy === st.id;
+              return (
+                <button
+                  key={st.id}
+                  onClick={() => setOptimizationStrategy(st.id)}
+                  className={`px-2 py-1.5 rounded-lg text-[10.5px] font-mono font-bold transition-all border text-center cursor-pointer ${
+                    isSelected
+                      ? 'bg-amber-400/20 text-amber-300 border-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.15)]'
+                      : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Weights Display & Custom Sliders */}
+          <div className="space-y-2.5 bg-slate-950/70 p-3 rounded-lg border border-slate-800/80">
+            <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between border-b border-slate-900 pb-1.5">
+              <span>ACTIVE WEIGHT COEFFICIENTS:</span>
+              <span className="text-amber-400 font-bold">{optimizationStrategy}</span>
+            </div>
+
+            {/* Distance Weight */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-cyan-400">Distance Weight (w_dist):</span>
+                <span className="text-cyan-300 font-bold">{objectiveWeights.distance.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={objectiveWeights.distance}
+                onChange={(e) => setObjectiveWeights({ distance: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+
+            {/* Energy Weight */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-emerald-400">Energy Weight (w_energy):</span>
+                <span className="text-emerald-300 font-bold">{objectiveWeights.energy.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={objectiveWeights.energy}
+                onChange={(e) => setObjectiveWeights({ energy: parseFloat(e.target.value) })}
+                className="w-full accent-emerald-400 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+
+            {/* Slope Weight */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-rose-400">Slope Weight (w_slope):</span>
+                <span className="text-rose-300 font-bold">{objectiveWeights.slope.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={objectiveWeights.slope}
+                onChange={(e) => setObjectiveWeights({ slope: parseFloat(e.target.value) })}
+                className="w-full accent-rose-400 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+
+            {/* Risk Weight */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-blue-400">Safety / Risk Weight (w_risk):</span>
+                <span className="text-blue-300 font-bold">{objectiveWeights.risk.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={objectiveWeights.risk}
+                onChange={(e) => setObjectiveWeights({ risk: parseFloat(e.target.value) })}
+                className="w-full accent-blue-400 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+
+            {/* Time Weight */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-amber-400">Time Weight (w_time):</span>
+                <span className="text-amber-300 font-bold">{objectiveWeights.time.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={objectiveWeights.time}
+                onChange={(e) => setObjectiveWeights({ time: parseFloat(e.target.value) })}
+                className="w-full accent-amber-400 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Pathfinding Algorithm */}
         <div className="space-y-3 pt-2 border-t border-slate-800/60">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <Compass className="w-3.5 h-3.5 text-amber-400" />
               <label className="text-[11px] font-mono text-slate-300 uppercase tracking-wider font-semibold">
-                Autonomous Pathfinding
+                Autonomous Solver
               </label>
             </div>
             <span className="text-[10px] font-mono text-slate-500">Heuristic Engine</span>
@@ -331,19 +476,19 @@ export const MissionConfigPanel: React.FC = () => {
               {
                 id: 'ASTAR' as AlgorithmType,
                 name: 'A* Search Algorithm',
-                desc: 'Optimal path with Euclidean heuristic. Best balance of speed and power consumption.',
+                desc: 'Optimal multi-objective path with directed heuristic. Best performance.',
                 tag: 'OPTIMAL',
               },
               {
                 id: 'DIJKSTRA' as AlgorithmType,
                 name: 'Dijkstra Exploration',
-                desc: 'Uniform-cost exhaustive node expansion. Guaranteed absolute lowest elevation resistance.',
+                desc: 'Uniform-cost exhaustive node expansion without directional heuristic.',
                 tag: 'EXHAUSTIVE',
               },
               {
                 id: 'GREEDY_BFS' as AlgorithmType,
                 name: 'Greedy Best-First Search',
-                desc: 'Prioritizes distance heuristic directly. Extremely fast computation, may detour steep slopes.',
+                desc: 'Prioritizes heuristic directly for rapid initial trajectory calculation.',
                 tag: 'FASTEST',
               },
               {
@@ -384,7 +529,7 @@ export const MissionConfigPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 5. Obstacles & Hazards Toggles */}
+        {/* 6. Obstacles & Hazards Toggles */}
         <div className="space-y-3 pt-2 border-t border-slate-800/60">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
@@ -455,6 +600,11 @@ export const MissionConfigPanel: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <StrategyComparisonModal
+        isOpen={isCompareModalOpen}
+        onClose={() => setIsCompareModalOpen(false)}
+      />
     </aside>
   );
 };

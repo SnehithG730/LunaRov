@@ -5,7 +5,6 @@ import {
   PathfindingResult,
   PathNode,
   PathVisualizationData,
-  PathVisualizationSegment,
 } from '@/types/pathfinding';
 import {
   IPathfinder,
@@ -13,8 +12,12 @@ import {
   NEIGHBOR_OFFSETS,
   resolveCellCost,
   isCellBlocked,
+  resolveEffectiveWeights,
+  calculateMultiObjectiveTransitionCost,
+  computeMultiObjectiveMetrics,
 } from './PathfinderInterface';
 import { PathOptimizer } from './PathOptimizer';
+import { DEFAULT_ROVER_CONFIG } from '@/lib/constants';
 
 export class DijkstraPathfinder implements IPathfinder {
   public findPath(
@@ -26,6 +29,8 @@ export class DijkstraPathfinder implements IPathfinder {
     const startTime = performance.now();
     const allowDiagonal = options.allowDiagonal ?? true;
     const shouldOptimize = options.optimizePath !== false;
+    const roverConfig = options.roverConfig ?? DEFAULT_ROVER_CONFIG;
+    const { strategy, weights } = resolveEffectiveWeights(options);
 
     if (
       start.x < 0 || start.x >= grid.width || start.y < 0 || start.y >= grid.height ||
@@ -80,6 +85,8 @@ export class DijkstraPathfinder implements IPathfinder {
         break;
       }
 
+      const currentCell = grid.cells[current.y][current.x];
+
       for (const offset of neighborList) {
         const nx = current.x + offset.dx;
         const ny = current.y + offset.dy;
@@ -99,16 +106,17 @@ export class DijkstraPathfinder implements IPathfinder {
           if (isCellBlocked(adj1, options) && isCellBlocked(adj2, options)) continue;
         }
 
-        const stepDistMeters = offset.cost * grid.resolution;
-        const currentCell = grid.cells[current.y][current.x];
-        const currentCost = resolveCellCost(currentCell, options);
-        const avgTerrainMultiplier = (currentCost + cellCost) * 0.5;
+        const { totalCost: stepCost } = calculateMultiObjectiveTransitionCost(
+          currentCell,
+          nCell,
+          offset.cost,
+          grid.resolution,
+          roverConfig,
+          weights,
+          options
+        );
 
-        const elevationDiff = nCell.elevation - currentCell.elevation;
-        const inclinePenalty = elevationDiff > 0 ? elevationDiff * 0.8 : 0;
-
-        const stepMovementCost = (stepDistMeters * avgTerrainMultiplier) + inclinePenalty;
-        const tentativeG = current.gCost + stepMovementCost;
+        const tentativeG = current.gCost + (stepCost * grid.resolution);
 
         if (tentativeG < gScores[nIndex]) {
           gScores[nIndex] = tentativeG;
@@ -132,6 +140,8 @@ export class DijkstraPathfinder implements IPathfinder {
     if (!goalNode) {
       return {
         algorithm: 'DIJKSTRA',
+        strategy,
+        weights,
         path: [],
         rawPath: [],
         optimizedPath: [],
@@ -146,6 +156,13 @@ export class DijkstraPathfinder implements IPathfinder {
         success: false,
         failureReason: 'No traversable path found (target blocked by terrain hazards)',
         estimatedEnergyWh: 0,
+        estimatedTravelTimeSeconds: 0,
+        averageSlopeDeg: 0,
+        maxSlopeDeg: 0,
+        riskScore: 0,
+        batteryRemainingPct: 100,
+        feasibility: 'INFEASIBLE',
+        feasibilityWarning: 'No route available to target.',
       };
     }
 
@@ -161,54 +178,39 @@ export class DijkstraPathfinder implements IPathfinder {
       : rawPath;
 
     const finalPath = optimizedPath;
-
-    let totalDistanceMeters = 0;
-    const segments: PathVisualizationSegment[] = [];
-    let totalMovementCost = 0;
-
-    for (let i = 0; i < finalPath.length - 1; i++) {
-      const p1 = finalPath[i];
-      const p2 = finalPath[i + 1];
-      const dx = (p2.x - p1.x) * grid.resolution;
-      const dy = (p2.y - p1.y) * grid.resolution;
-      const dz = grid.cells[p2.y][p2.x].elevation - grid.cells[p1.y][p1.x].elevation;
-      const segDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      totalDistanceMeters += segDist;
-
-      const segCost = resolveCellCost(grid.cells[p2.y][p2.x], options);
-      totalMovementCost += segCost * segDist;
-
-      segments.push({
-        from: p1,
-        to: p2,
-        cost: Number(segCost.toFixed(2)),
-        distanceMeters: Number(segDist.toFixed(2)),
-      });
-    }
-
-    const estimatedEnergyWh = goalNode.gCost * 0.45;
+    const metrics = computeMultiObjectiveMetrics(grid, finalPath, roverConfig, weights, options);
 
     const visualizationData: PathVisualizationData = {
       waypoints: finalPath,
       exploredSequence: exploredNodes,
-      segments,
+      segments: metrics.segments,
     };
 
     return {
       algorithm: 'DIJKSTRA',
+      strategy,
+      weights,
       path: finalPath,
       rawPath,
       optimizedPath,
       exploredNodes,
-      totalDistanceMeters: Number(totalDistanceMeters.toFixed(2)),
-      totalDistance: Number(totalDistanceMeters.toFixed(2)),
-      totalMovementCost: Number(totalMovementCost.toFixed(2)),
+      totalDistanceMeters: metrics.totalDistanceMeters,
+      totalDistance: metrics.totalDistanceMeters,
+      totalMovementCost: metrics.totalMovementCost,
       nodesEvaluated: exploredNodes.length,
       nodesExploredCount: exploredNodes.length,
       executionTimeMs: Number(executionTimeMs.toFixed(2)),
       computeTimeMs: Number(executionTimeMs.toFixed(2)),
       success: true,
-      estimatedEnergyWh: Number(estimatedEnergyWh.toFixed(1)),
+      estimatedEnergyWh: metrics.estimatedEnergyWh,
+      estimatedTravelTimeSeconds: metrics.estimatedTravelTimeSeconds,
+      averageSlopeDeg: metrics.averageSlopeDeg,
+      maxSlopeDeg: metrics.maxSlopeDeg,
+      riskScore: metrics.riskScore,
+      batteryRemainingPct: metrics.batteryRemainingPct,
+      feasibility: metrics.feasibility,
+      feasibilityWarning: metrics.feasibilityWarning,
+      costBreakdown: metrics.costBreakdown,
       visualizationData,
     };
   }
@@ -230,6 +232,13 @@ export class DijkstraPathfinder implements IPathfinder {
       success: false,
       failureReason: reason,
       estimatedEnergyWh: 0,
+      estimatedTravelTimeSeconds: 0,
+      averageSlopeDeg: 0,
+      maxSlopeDeg: 0,
+      riskScore: 0,
+      batteryRemainingPct: 100,
+      feasibility: 'INFEASIBLE',
+      feasibilityWarning: reason,
     };
   }
 }

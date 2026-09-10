@@ -6,7 +6,6 @@ import {
   PathNode,
   HeuristicType,
   PathVisualizationData,
-  PathVisualizationSegment,
 } from '@/types/pathfinding';
 import {
   IPathfinder,
@@ -14,9 +13,13 @@ import {
   NEIGHBOR_OFFSETS,
   resolveCellCost,
   isCellBlocked,
+  resolveEffectiveWeights,
+  calculateMultiObjectiveTransitionCost,
+  computeMultiObjectiveMetrics,
 } from './PathfinderInterface';
 import { octileDistance, euclideanDistance, manhattanDistance } from '@/lib/math';
 import { PathOptimizer } from './PathOptimizer';
+import { DEFAULT_ROVER_CONFIG } from '@/lib/constants';
 
 export class AStarPathfinder implements IPathfinder {
   public findPath(
@@ -29,6 +32,8 @@ export class AStarPathfinder implements IPathfinder {
     const heuristicType: HeuristicType = options.heuristic ?? 'OCTILE';
     const allowDiagonal = options.allowDiagonal ?? true;
     const shouldOptimize = options.optimizePath !== false;
+    const roverConfig = options.roverConfig ?? DEFAULT_ROVER_CONFIG;
+    const { strategy, weights } = resolveEffectiveWeights(options);
 
     // Validate bounds
     if (
@@ -49,12 +54,14 @@ export class AStarPathfinder implements IPathfinder {
     }
 
     // Heuristic function h(n)
+    // Scale heuristic conservatively to maintain admissibility under weighted costs
+    const heuristicScale = Math.max(0.5, (weights.distance * 1.0 + weights.time * 0.5 + 0.2));
     const getH = (p: Point2D): number => {
       let d = 0;
       if (heuristicType === 'OCTILE') d = octileDistance(p, target);
       else if (heuristicType === 'EUCLIDEAN') d = euclideanDistance(p, target);
       else d = manhattanDistance(p, target);
-      return d * grid.resolution;
+      return d * grid.resolution * heuristicScale;
     };
 
     const openSet = new PriorityQueue<PathNode>();
@@ -95,6 +102,8 @@ export class AStarPathfinder implements IPathfinder {
         break;
       }
 
+      const currentCell = grid.cells[current.y][current.x];
+
       for (const offset of neighborList) {
         const nx = current.x + offset.dx;
         const ny = current.y + offset.dy;
@@ -115,21 +124,19 @@ export class AStarPathfinder implements IPathfinder {
           if (isCellBlocked(adj1, options) && isCellBlocked(adj2, options)) continue;
         }
 
-        // Distance in meters: orthogonal = resolution, diagonal = sqrt(2) * resolution
-        const stepDistMeters = offset.cost * grid.resolution;
+        // Multi-objective transition cost calculation
+        const { totalCost: stepCost } = calculateMultiObjectiveTransitionCost(
+          currentCell,
+          nCell,
+          offset.cost,
+          grid.resolution,
+          roverConfig,
+          weights,
+          options
+        );
 
-        // Effective terrain traversal cost
-        const currentCell = grid.cells[current.y][current.x];
-        const currentCost = resolveCellCost(currentCell, options);
-        const avgTerrainMultiplier = (currentCost + cellCost) * 0.5;
-
-        // Incline delta penalty
-        const elevationDiff = nCell.elevation - currentCell.elevation;
-        const inclinePenalty = elevationDiff > 0 ? elevationDiff * 0.8 : 0;
-
-        // g(n) = accumulated cost to reach neighbor
-        const stepMovementCost = (stepDistMeters * avgTerrainMultiplier) + inclinePenalty;
-        const tentativeG = current.gCost + stepMovementCost;
+        // g(n) = accumulated cost to reach neighbor in metric units
+        const tentativeG = current.gCost + (stepCost * grid.resolution);
 
         if (tentativeG < gScores[nIndex]) {
           gScores[nIndex] = tentativeG;
@@ -154,6 +161,8 @@ export class AStarPathfinder implements IPathfinder {
     if (!goalNode) {
       return {
         algorithm: 'ASTAR',
+        strategy,
+        weights,
         path: [],
         rawPath: [],
         optimizedPath: [],
@@ -168,6 +177,13 @@ export class AStarPathfinder implements IPathfinder {
         success: false,
         failureReason: 'No traversable path found to destination (target blocked by terrain hazards)',
         estimatedEnergyWh: 0,
+        estimatedTravelTimeSeconds: 0,
+        averageSlopeDeg: 0,
+        maxSlopeDeg: 0,
+        riskScore: 0,
+        batteryRemainingPct: 100,
+        feasibility: 'INFEASIBLE',
+        feasibilityWarning: 'No route available to target.',
       };
     }
 
@@ -179,63 +195,47 @@ export class AStarPathfinder implements IPathfinder {
       curr = curr.parent;
     }
 
-    // Path optimization (prune unnecessary collinear/unblocked intermediate points)
+    // Path optimization (prune unnecessary intermediate points while preserving clearance)
     const optimizedPath = shouldOptimize
       ? PathOptimizer.optimizePath(grid, rawPath, options)
       : rawPath;
 
-    // Use optimized path for output
     const finalPath = optimizedPath;
 
-    // Compute ground 3D distance
-    let totalDistanceMeters = 0;
-    const segments: PathVisualizationSegment[] = [];
-    let totalMovementCost = 0;
-
-    for (let i = 0; i < finalPath.length - 1; i++) {
-      const p1 = finalPath[i];
-      const p2 = finalPath[i + 1];
-      const dx = (p2.x - p1.x) * grid.resolution;
-      const dy = (p2.y - p1.y) * grid.resolution;
-      const dz = grid.cells[p2.y][p2.x].elevation - grid.cells[p1.y][p1.x].elevation;
-      const segDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      totalDistanceMeters += segDist;
-
-      const segCost = resolveCellCost(grid.cells[p2.y][p2.x], options);
-      totalMovementCost += segCost * segDist;
-
-      segments.push({
-        from: p1,
-        to: p2,
-        cost: Number(segCost.toFixed(2)),
-        distanceMeters: Number(segDist.toFixed(2)),
-      });
-    }
-
-    // Estimated energy in Wh based on work performed
-    const estimatedEnergyWh = goalNode.gCost * 0.45;
+    // Full multi-objective metrics
+    const metrics = computeMultiObjectiveMetrics(grid, finalPath, roverConfig, weights, options);
 
     const visualizationData: PathVisualizationData = {
       waypoints: finalPath,
       exploredSequence: exploredNodes,
-      segments,
+      segments: metrics.segments,
     };
 
     return {
       algorithm: 'ASTAR',
+      strategy,
+      weights,
       path: finalPath,
       rawPath,
       optimizedPath,
       exploredNodes,
-      totalDistanceMeters: Number(totalDistanceMeters.toFixed(2)),
-      totalDistance: Number(totalDistanceMeters.toFixed(2)),
-      totalMovementCost: Number(totalMovementCost.toFixed(2)),
+      totalDistanceMeters: metrics.totalDistanceMeters,
+      totalDistance: metrics.totalDistanceMeters,
+      totalMovementCost: metrics.totalMovementCost,
       nodesEvaluated: exploredNodes.length,
       nodesExploredCount: exploredNodes.length,
       executionTimeMs: Number(executionTimeMs.toFixed(2)),
       computeTimeMs: Number(executionTimeMs.toFixed(2)),
       success: true,
-      estimatedEnergyWh: Number(estimatedEnergyWh.toFixed(1)),
+      estimatedEnergyWh: metrics.estimatedEnergyWh,
+      estimatedTravelTimeSeconds: metrics.estimatedTravelTimeSeconds,
+      averageSlopeDeg: metrics.averageSlopeDeg,
+      maxSlopeDeg: metrics.maxSlopeDeg,
+      riskScore: metrics.riskScore,
+      batteryRemainingPct: metrics.batteryRemainingPct,
+      feasibility: metrics.feasibility,
+      feasibilityWarning: metrics.feasibilityWarning,
+      costBreakdown: metrics.costBreakdown,
       visualizationData,
     };
   }
@@ -257,6 +257,13 @@ export class AStarPathfinder implements IPathfinder {
       success: false,
       failureReason: reason,
       estimatedEnergyWh: 0,
+      estimatedTravelTimeSeconds: 0,
+      averageSlopeDeg: 0,
+      maxSlopeDeg: 0,
+      riskScore: 0,
+      batteryRemainingPct: 100,
+      feasibility: 'INFEASIBLE',
+      feasibilityWarning: reason,
     };
   }
 }

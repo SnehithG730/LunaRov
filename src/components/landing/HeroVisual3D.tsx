@@ -160,72 +160,212 @@ export const HeroVisual3D: React.FC = () => {
     terrainMesh.castShadow = true;
     scene.add(terrainMesh);
 
-    // 8. 3D Rover Model perched on a ridge
+    // 8. Ultra-Detailed 6-Wheel Rocker-Bogie Lunar Exploration Rover
     const roverGroup = new THREE.Group();
 
-    // Chassis body
-    const bodyGeo = new THREE.BoxGeometry(2.4, 1.1, 3.2);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xdde6ed,
-      metalness: 0.5,
+    // Composite Carbon-Titanium Core Chassis
+    const chassisGeo = new THREE.BoxGeometry(2.0, 0.65, 2.7);
+    const chassisMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.65,
+      roughness: 0.25,
+    });
+    const chassis = new THREE.Mesh(chassisGeo, chassisMat);
+    chassis.position.y = 0.85;
+    chassis.castShadow = true;
+    chassis.receiveShadow = true;
+    roverGroup.add(chassis);
+
+    // Multi-Layer Insulation (MLI) Thermal Gold Foil Under-Skirt
+    const foilGeo = new THREE.BoxGeometry(1.85, 0.35, 2.5);
+    const foilMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      metalness: 0.95,
+      roughness: 0.18,
+      emissive: 0xb45309,
+      emissiveIntensity: 0.2,
+    });
+    const foil = new THREE.Mesh(foilGeo, foilMat);
+    foil.position.y = 0.45;
+    foil.castShadow = true;
+    roverGroup.add(foil);
+
+    // High-Efficiency Photovoltaic Solar Array Deck
+    const solarDeckGeo = new THREE.BoxGeometry(2.15, 0.06, 2.85);
+    const solarDeckMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      metalness: 0.92,
+      roughness: 0.12,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.15,
+    });
+    const solarDeck = new THREE.Mesh(solarDeckGeo, solarDeckMat);
+    solarDeck.position.y = 1.2;
+    roverGroup.add(solarDeck);
+
+    // Solar Cell Grid Lines
+    const gridMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.6 });
+    for (let g = -1.0; g <= 1.0; g += 0.4) {
+      const lineGeo = new THREE.BoxGeometry(0.02, 0.07, 2.8);
+      const lineMesh = new THREE.Mesh(lineGeo, gridMat);
+      lineMesh.position.set(g, 1.21, 0);
+      roverGroup.add(lineMesh);
+    }
+
+    // Rear Radioisotope Thermoelectric Generator (RTG)
+    const rtgGeo = new THREE.CylinderGeometry(0.32, 0.35, 0.75, 16);
+    const rtgMat = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      metalness: 0.85,
       roughness: 0.3,
     });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 1.0;
-    body.castShadow = true;
-    body.receiveShadow = true;
-    roverGroup.add(body);
+    const rtg = new THREE.Mesh(rtgGeo, rtgMat);
+    rtg.rotation.x = Math.PI / 2;
+    rtg.position.set(0, 0.95, -1.55);
+    rtg.castShadow = true;
+    roverGroup.add(rtg);
 
-    // Solar Panel Deck
-    const panelGeo = new THREE.BoxGeometry(2.2, 0.08, 2.8);
-    const panelMat = new THREE.MeshStandardMaterial({
-      color: 0x091322,
-      metalness: 0.85,
-      roughness: 0.15,
+    // RTG Heat Radiator Cooling Fins
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.9, roughness: 0.2 });
+    for (let f = 0; f < 6; f++) {
+      const finGeo = new THREE.BoxGeometry(0.85, 0.03, 0.65);
+      const fin = new THREE.Mesh(finGeo, finMat);
+      fin.rotation.z = (f * Math.PI) / 6;
+      fin.position.set(0, 0.95, -1.55);
+      roverGroup.add(fin);
+    }
+
+    // Earth-Facing High-Gain Parabolic Antenna Dish
+    const antennaStemGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8);
+    const antennaStemMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 });
+    const antennaStem = new THREE.Mesh(antennaStemGeo, antennaStemMat);
+    antennaStem.position.set(0.65, 1.5, -0.75);
+    antennaStem.rotation.z = -0.3;
+    roverGroup.add(antennaStem);
+
+    const dishGeo = new THREE.SphereGeometry(0.42, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2.2);
+    const dishMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.8,
+      roughness: 0.2,
+      side: THREE.DoubleSide,
     });
-    const panel = new THREE.Mesh(panelGeo, panelMat);
-    panel.position.y = 1.6;
-    roverGroup.add(panel);
+    const dish = new THREE.Mesh(dishGeo, dishMat);
+    dish.position.set(0.8, 1.85, -0.75);
+    dish.rotation.x = -Math.PI / 3;
+    dish.rotation.z = 0.4;
+    roverGroup.add(dish);
 
-    // Sensor Gimbal / Mast
-    const mastGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.6, 8);
-    const mastMat = new THREE.MeshStandardMaterial({ color: 0x64748b });
+    // Primary Sensor Mast Assembly
+    const mastGeo = new THREE.CylinderGeometry(0.06, 0.08, 1.5, 12);
+    const mastMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.85, roughness: 0.25 });
     const mast = new THREE.Mesh(mastGeo, mastMat);
-    mast.position.set(0, 2.2, 1.1);
+    mast.position.set(-0.55, 1.95, 0.95);
+    mast.castShadow = true;
     roverGroup.add(mast);
 
-    const sensorHeadGeo = new THREE.BoxGeometry(0.6, 0.35, 0.45);
-    const sensorHeadMat = new THREE.MeshStandardMaterial({
-      color: 0x00f0ff,
-      emissive: 0x006688,
+    // Pan-Tilt NavCam Stereo Vision Gimbal Head
+    const camHeadGeo = new THREE.BoxGeometry(0.48, 0.22, 0.32);
+    const camHeadMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.7,
+      roughness: 0.3,
+    });
+    const camHead = new THREE.Mesh(camHeadGeo, camHeadMat);
+    camHead.position.set(-0.55, 2.7, 0.95);
+    camHead.castShadow = true;
+    roverGroup.add(camHead);
+
+    // Dual Stereo Optical Lenses
+    const lensGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.08, 16);
+    const lensMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      metalness: 0.95,
+      roughness: 0.05,
+      emissive: 0x0369a1,
       emissiveIntensity: 0.6,
     });
-    const sensorHead = new THREE.Mesh(sensorHeadGeo, sensorHeadMat);
-    sensorHead.position.set(0, 3.0, 1.1);
-    roverGroup.add(sensorHead);
+    const leftLens = new THREE.Mesh(lensGeo, lensMat);
+    leftLens.rotation.x = Math.PI / 2;
+    leftLens.position.set(-0.7, 2.7, 1.12);
+    roverGroup.add(leftLens);
 
-    // Headlight Spotlight Cones
-    const headLight = new THREE.SpotLight(0xccf2ff, 4.0, 45, Math.PI / 4.5, 0.5, 1.2);
-    headLight.position.set(0, 2.8, 1.2);
-    headLight.target.position.set(0, 0, 25);
+    const rightLens = new THREE.Mesh(lensGeo, lensMat);
+    rightLens.rotation.x = Math.PI / 2;
+    rightLens.position.set(-0.4, 2.7, 1.12);
+    roverGroup.add(rightLens);
+
+    // 360-Degree Pulsing LiDAR Scanner Dome
+    const lidarGeo = new THREE.CylinderGeometry(0.14, 0.16, 0.18, 16);
+    const lidarMat = new THREE.MeshStandardMaterial({
+      color: 0x06b6d4,
+      emissive: 0x0891b2,
+      emissiveIntensity: 0.8,
+      metalness: 0.9,
+    });
+    const lidar = new THREE.Mesh(lidarGeo, lidarMat);
+    lidar.position.set(-0.55, 2.9, 0.95);
+    roverGroup.add(lidar);
+
+    // Front Lunar Night Navigation Searchlights
+    const headLight = new THREE.SpotLight(0xccf2ff, 5.0, 50, Math.PI / 4.5, 0.4, 1.2);
+    headLight.position.set(0, 1.2, 1.4);
+    headLight.target.position.set(0, 0, 30);
+    headLight.castShadow = true;
     roverGroup.add(headLight);
     roverGroup.add(headLight.target);
 
-    // 4 Wheels
-    const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 16);
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.85 });
+    // 6-Wheel Rocker-Bogie Articulated Suspension
+    const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.32, 20);
+    const wheelMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.75,
+      roughness: 0.45,
+    });
+    const hubCapGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.34, 12);
+    const hubCapMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.9,
+      roughness: 0.2,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.3,
+    });
+    const rockerArmMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+
     const wheelOffsets = [
-      [-1.4, 0.5, 1.1],
-      [1.4, 0.5, 1.1],
-      [-1.4, 0.5, -1.1],
-      [1.4, 0.5, -1.1],
+      // Left side: Front, Mid, Rear
+      [-1.3, 0.42, 1.05],
+      [-1.38, 0.42, 0.0],
+      [-1.3, 0.42, -1.05],
+      // Right side: Front, Mid, Rear
+      [1.3, 0.42, 1.05],
+      [1.38, 0.42, 0.0],
+      [1.3, 0.42, -1.05],
     ];
+
     wheelOffsets.forEach(([wx, wy, wz]) => {
-      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(wx, wy, wz);
-      wheel.castShadow = true;
-      roverGroup.add(wheel);
+      const wheelAssembly = new THREE.Group();
+
+      const wheelMesh = new THREE.Mesh(wheelGeo, wheelMat);
+      wheelMesh.rotation.z = Math.PI / 2;
+      wheelMesh.castShadow = true;
+      wheelMesh.receiveShadow = true;
+      wheelAssembly.add(wheelMesh);
+
+      const hubCap = new THREE.Mesh(hubCapGeo, hubCapMat);
+      hubCap.rotation.z = Math.PI / 2;
+      wheelAssembly.add(hubCap);
+
+      wheelAssembly.position.set(wx, wy, wz);
+      roverGroup.add(wheelAssembly);
+
+      // Rocker Struts
+      const isLeft = wx < 0;
+      const strutGeo = new THREE.BoxGeometry(0.08, 0.08, Math.abs(wz) > 0.1 ? 1.05 : 0.45);
+      const strut = new THREE.Mesh(strutGeo, rockerArmMat);
+      strut.position.set(isLeft ? -1.15 : 1.15, 0.6, wz * 0.5);
+      strut.rotation.x = wz > 0 ? -0.2 : wz < 0 ? 0.2 : 0;
+      roverGroup.add(strut);
     });
 
     // Position rover on scenic ridge

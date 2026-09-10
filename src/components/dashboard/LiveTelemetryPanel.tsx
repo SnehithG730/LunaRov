@@ -280,19 +280,36 @@ export const LiveTelemetryPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* LiDAR Radar Scan State */}
-        <div className="bg-[#0d1424] border border-cyan-950 px-2.5 py-2 rounded-lg flex items-center justify-between text-[11px]">
-          <div className="flex items-center gap-1.5 text-gray-400">
-            <Radar className="w-3.5 h-3.5 text-cyan-400" />
-            <span>LIDAR HAZARD:</span>
+        {/* LiDAR Radar Scan State & AI Autonomous Avoidance */}
+        <div className="bg-[#0d1424] border border-cyan-950 px-2.5 py-2 rounded-lg space-y-1 text-[11px]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-gray-400">
+              <Radar className="w-3.5 h-3.5 text-cyan-400" />
+              <span>LIDAR HAZARD:</span>
+            </div>
+            {roverState.missionStatus === 'REROUTING' ? (
+              <span className="text-cyan-400 font-bold flex items-center gap-1 text-[10.5px] animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                AI RE-ROUTING DETOUR
+              </span>
+            ) : sensorScan?.hasHazardAhead ? (
+              <span className={`font-bold flex items-center gap-1 text-[10.5px] ${
+                sensorScan.closestHazardDistMeters < 4 ? 'text-red-400 animate-pulse' : 'text-amber-400'
+              }`}>
+                <ShieldAlert className="w-3.5 h-3.5" />
+                {sensorScan.hazardType ? sensorScan.hazardType.replace(/_/g, ' ') : 'HAZARD'} · {sensorScan.closestHazardDistMeters}m
+              </span>
+            ) : (
+              <span className="text-emerald-400 font-bold text-[10.5px] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                SECTOR CLEAR
+              </span>
+            )}
           </div>
-          {sensorScan?.hasHazardAhead ? (
-            <span className="text-amber-400 font-bold flex items-center gap-1 text-[10.5px]">
-              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-              HAZARD {sensorScan.closestHazardDistMeters}m (REROUTES: {rerouteCount})
-            </span>
-          ) : (
-            <span className="text-emerald-400 font-bold text-[10.5px]">CLEAR</span>
+          {sensorScan?.hazardDescription && (
+            <div className="text-[9.5px] text-gray-400 truncate border-t border-cyan-950/60 pt-1">
+              Target: <span className="text-gray-200">{sensorScan.hazardDescription}</span>
+            </div>
           )}
         </div>
       </div>

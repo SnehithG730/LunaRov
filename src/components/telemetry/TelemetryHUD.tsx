@@ -11,6 +11,11 @@ export const TelemetryHUD: React.FC = () => {
   const sensorScan = useMissionStore((s) => s.sensorScan);
   const rerouteCount = useMissionStore((s) => s.rerouteCount);
 
+  const latestReplanTelemetry = useMissionStore((s) => s.latestReplanTelemetry);
+  const selectedAlgorithm = useMissionStore((s) => s.selectedAlgorithm);
+  const sensorDiscoveryMode = useMissionStore((s) => s.sensorDiscoveryMode);
+  const latestDiscoveryTelemetry = useMissionStore((s) => s.latestDiscoveryTelemetry);
+
   const curCellX = Math.max(0, Math.min(terrain.width - 1, Math.round(roverState.x)));
   const curCellY = Math.max(0, Math.min(terrain.height - 1, Math.round(roverState.y)));
   const currentCell = terrain.cells[curCellY]?.[curCellX];
@@ -25,7 +30,20 @@ export const TelemetryHUD: React.FC = () => {
           <Activity className="w-4 h-4 text-cyan-400" />
           <span className="font-bold text-gray-200">LIVE TELEMETRY STREAM</span>
         </div>
-        <span className="text-[10px] text-cyan-400 font-semibold animate-pulse">50 Hz TELEMETRY LINK</span>
+        <div className="flex items-center gap-2">
+          {sensorDiscoveryMode && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              DISCOVERY ACTIVE
+            </span>
+          )}
+          {selectedAlgorithm === 'DSTAR_LITE' && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700 font-bold">
+              D* LITE ACTIVE
+            </span>
+          )}
+          <span className="text-[10px] text-cyan-400 font-semibold animate-pulse">50 Hz TELEMETRY LINK</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -99,7 +117,7 @@ export const TelemetryHUD: React.FC = () => {
           </div>
         </div>
 
-        {/* LiDAR Proximity Radar */}
+        {/* LiDAR Proximity Radar & AI Hazard Avoidance */}
         <div className="bg-[#0e1628] border border-cyan-950 p-2.5 rounded-lg space-y-1">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <span className="flex items-center gap-1">
@@ -108,21 +126,87 @@ export const TelemetryHUD: React.FC = () => {
             </span>
             <span>REROUTES: <strong className="text-white">{rerouteCount}</strong></span>
           </div>
-          <div className="text-lg font-bold">
-            {sensorScan?.hasHazardAhead ? (
-              <span className="text-amber-400 flex items-center gap-1 text-sm">
-                <ShieldAlert className="w-4 h-4 text-amber-400" />
-                HAZARD {sensorScan.closestHazardDistMeters}m
+          <div className="text-sm font-bold min-h-[26px] flex items-center">
+            {roverState.missionStatus === 'REROUTING' ? (
+              <span className="text-cyan-400 flex items-center gap-1.5 text-xs animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                AI RE-ROUTING DETOUR...
               </span>
+            ) : sensorScan?.hasHazardAhead ? (
+              <div className="flex flex-col">
+                <span className={`flex items-center gap-1 text-xs ${
+                  sensorScan.closestHazardDistMeters < 4 ? 'text-red-400 font-extrabold animate-pulse' : 'text-amber-400'
+                }`}>
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  {sensorScan.hazardType ? sensorScan.hazardType.replace(/_/g, ' ') : 'HAZARD'} · {sensorScan.closestHazardDistMeters}m
+                </span>
+              </div>
             ) : (
-              <span className="text-emerald-400 text-sm">SECTOR CLEAR</span>
+              <span className="text-emerald-400 text-xs flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                SECTOR CLEAR
+              </span>
             )}
           </div>
-          <div className="text-[10px] text-gray-500">
-            Sensor Arc: {roverConfig.sensorRangeMeters}m @ {roverConfig.sensorFovDeg}° FOV
+          <div className="text-[10px] text-gray-500 truncate">
+            {sensorScan?.hazardDescription ? sensorScan.hazardDescription : `Sensor Arc: ${roverConfig.sensorRangeMeters}m @ ${roverConfig.sensorFovDeg}°`}
           </div>
         </div>
       </div>
+
+      {/* Sensor Discovery / Unknown Terrain Exploration Telemetry Card */}
+      {sensorDiscoveryMode && latestDiscoveryTelemetry && (
+        <div className="p-2.5 rounded-lg bg-[#06181e] border border-emerald-800/60 text-[10.5px] space-y-1.5 text-emerald-200">
+          <div className="flex justify-between items-center border-b border-emerald-900/50 pb-1">
+            <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              UNKNOWN TERRAIN LIDAR DISCOVERY
+            </span>
+            <span className="text-[9.5px] text-emerald-400 font-mono">
+              {latestDiscoveryTelemetry.explorationPercentage.toFixed(1)}% EXPLORED
+            </span>
+          </div>
+
+          {/* Mini progress bar */}
+          <div className="w-full bg-emerald-950/80 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, latestDiscoveryTelemetry.explorationPercentage))}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5 text-gray-300">
+            <div>Cells Discovered: <strong className="text-emerald-300">{latestDiscoveryTelemetry.cellsDiscoveredCount} / {latestDiscoveryTelemetry.totalCellsInGrid}</strong></div>
+            <div>Unknown Remaining: <strong className="text-gray-400">{latestDiscoveryTelemetry.unknownCellsRemaining}</strong></div>
+            <div>Hazards Detected: <strong className="text-amber-300">{latestDiscoveryTelemetry.hazardsDetectedCount}</strong></div>
+            <div>LiDAR Reach: <strong className="text-cyan-300">{roverConfig.sensorRangeMeters} m</strong></div>
+          </div>
+          {latestDiscoveryTelemetry.lastDiscoveryMessage && (
+            <div className="text-[9.5px] text-emerald-400/90 truncate pt-0.5 font-mono">
+              &gt; {latestDiscoveryTelemetry.lastDiscoveryMessage}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dynamic D* Lite Replanning Telemetry Bar (if replanning occurred) */}
+      {rerouteCount > 0 && latestReplanTelemetry && (
+        <div className="p-2.5 rounded-lg bg-[#081226] border border-cyan-800/60 text-[10.5px] space-y-1 text-cyan-200">
+          <div className="flex justify-between items-center border-b border-cyan-900/50 pb-1">
+            <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              DYNAMIC REPLAN TELEMETRY (D* LITE)
+            </span>
+            <span className="text-[9.5px] text-gray-400">Total Replans: {rerouteCount}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5 text-gray-300">
+            <div>Nodes Updated: <strong className="text-cyan-300">{latestReplanTelemetry.nodesUpdated}</strong></div>
+            <div>Path Before: <strong className="text-white">{latestReplanTelemetry.pathLengthBeforeMeters.toFixed(1)} m</strong></div>
+            <div>Path After: <strong className="text-white">{latestReplanTelemetry.pathLengthAfterMeters.toFixed(1)} m</strong></div>
+            <div>Added Detour (Δd): <strong className="text-amber-300">+{latestReplanTelemetry.additionalDistanceMeters.toFixed(1)} m</strong></div>
+          </div>
+        </div>
+      )}
 
       {/* Traversal Summary Pill Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-cyan-950 text-[10px] text-gray-400">

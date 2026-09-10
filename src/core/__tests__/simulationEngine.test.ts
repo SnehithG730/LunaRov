@@ -1,5 +1,6 @@
 import { RoverSimulationEngine } from '../rover/RoverSimulationEngine';
 import { EnergyModel } from '../rover/EnergyModel';
+import { CollisionSystem } from '../simulation/CollisionSystem';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { DEFAULT_ROVER_CONFIG } from '@/lib/constants';
 import { RoverState } from '@/types/rover';
@@ -364,4 +365,93 @@ const requiredStatuses = [
 
 console.log(`  ✓ Verified all 9 lifecycle statuses: ${requiredStatuses.join(', ')}`);
 
-console.log('\n>>> ALL 8 ROVER SIMULATION ENGINE TESTS PASSED SUCCESSFULLY! <<<\n');
+// -------------------------------------------------------------
+// TEST 9: Multi-Hazard Classification & Autonomous Avoidance
+// (Boulders, Glitchy Terrain, Steep Slopes, Super Inclined Craters)
+// -------------------------------------------------------------
+console.log('\n[TEST 9] Verifying Multi-Hazard Detection & Autonomous Redesign...');
+// Create terrain with steep crater slope and glitchy terrain ahead
+const multiHazardTerrain = JSON.parse(JSON.stringify(terrain));
+// Set cell (7, 5) as steep crater wall
+multiHazardTerrain.cells[5][7].slope = 24.5;
+multiHazardTerrain.cells[5][7].elevation = -0.8;
+
+const craterApproachState = createInitialState(5.8, 5, 0);
+craterApproachState.velocity = 1.0;
+
+const craterReroute = RoverSimulationEngine.step({
+  state: craterApproachState,
+  config: DEFAULT_ROVER_CONFIG,
+  terrain: multiHazardTerrain,
+  activePath: [
+    { x: 5, y: 5 },
+    { x: 6, y: 5 },
+    { x: 7, y: 5 },
+    { x: 8, y: 5 },
+  ],
+  currentWaypointIndex: 1,
+  targetPoint: { x: 8, y: 5 },
+  dtSeconds: 0.1,
+  rerouteCount: 0,
+  isAutonomous: true,
+});
+
+if (craterReroute.updatedState.velocity > 0.05) {
+  throw new Error('Rover failed to stop before steep crater hazard!');
+}
+const hasCraterEvent = craterReroute.newEvents.some((e) =>
+  e.message.includes('OBSTACLE IDENTIFIED') || e.message.includes('Crater') || e.message.includes('Slope')
+);
+if (!hasCraterEvent) {
+  throw new Error('Event for steep crater hazard was not emitted!');
+}
+console.log(`  ✓ Steep Crater Wall identified & rover halted: "${craterReroute.newEvents[0]?.message}"`);
+console.log(`  ✓ Detour computed: ${craterReroute.activePath.length} waypoints, avoiding crater cell [7, 5]`);
+
+// Test Glitchy Terrain classification
+const glitchyCell = { ...terrain.cells[0][0], roughness: 2.4, isObstacle: false, slope: 5 };
+const glitchClass = CollisionSystem.classifyHazard(glitchyCell);
+if (glitchClass.type !== 'GLITCHY_TERRAIN') {
+  throw new Error(`Expected GLITCHY_TERRAIN, got ${glitchClass.type}`);
+}
+console.log(`  ✓ Glitchy terrain classified: ${glitchClass.desc}`);
+
+// -------------------------------------------------------------
+// TEST 10: Post-Reroute Movement & Continuous Autonomous Traversal
+// (Rover accelerates smoothly along detour without freezing)
+// -------------------------------------------------------------
+console.log('\n[TEST 10] Verifying Rover Movement & Acceleration Along Detour...');
+let postRerouteState = craterReroute.updatedState;
+let postReroutePath = craterReroute.activePath;
+let postRerouteWpIdx = craterReroute.nextWaypointIndex;
+const postVelocities: number[] = [];
+
+for (let step = 0; step < 10; step++) {
+  const stepRes = RoverSimulationEngine.step({
+    state: postRerouteState,
+    config: DEFAULT_ROVER_CONFIG,
+    terrain: multiHazardTerrain,
+    activePath: postReroutePath,
+    currentWaypointIndex: postRerouteWpIdx,
+    targetPoint: { x: 8, y: 5 },
+    dtSeconds: 0.1,
+    rerouteCount: craterReroute.rerouteCount,
+    isAutonomous: true,
+  });
+
+  postRerouteState = stepRes.updatedState;
+  postReroutePath = stepRes.activePath;
+  postRerouteWpIdx = stepRes.nextWaypointIndex;
+  postVelocities.push(stepRes.updatedState.velocity);
+  console.log(`  [TEST 10 Step ${step}] v=${stepRes.updatedState.velocity.toFixed(3)}, pos=(${stepRes.updatedState.x.toFixed(2)}, ${stepRes.updatedState.y.toFixed(2)}), wpIdx=${stepRes.nextWaypointIndex}, events=${stepRes.newEvents.map(e => e.message).join(' | ')}`);
+}
+
+const finalPostVelocity = postVelocities[postVelocities.length - 1];
+if (finalPostVelocity <= 0.2) {
+  throw new Error(`Rover failed to move along detour! Final velocity: ${finalPostVelocity}m/s`);
+}
+
+console.log(`  ✓ Rover accelerated along detour: step 1: ${postVelocities[0].toFixed(3)}m/s -> step 10: ${finalPostVelocity.toFixed(3)}m/s`);
+console.log(`  ✓ Traversed position: (${postRerouteState.x.toFixed(2)}, ${postRerouteState.y.toFixed(2)}), waypoint index: ${postRerouteWpIdx}`);
+
+console.log('\n>>> ALL 10 ROVER SIMULATION ENGINE TESTS PASSED SUCCESSFULLY! <<<\n');

@@ -3,14 +3,70 @@ import { TerrainGrid, TerrainCell } from '@/types/terrain';
 import { Point2D } from '@/types/pathfinding';
 import { normalizeAngle, angleDifference } from '@/lib/math';
 
+export type HazardType =
+  | 'BOULDER'
+  | 'GLITCHY_TERRAIN'
+  | 'STEEP_SLOPE'
+  | 'SUPER_INCLINED_CRATER'
+  | 'CRATER_RIM'
+  | 'IMPASSABLE';
+
 export interface SensorScanResult {
   hasHazardAhead: boolean;
   closestHazardDistMeters: number;
   hazardCell?: TerrainCell;
+  hazardType?: HazardType;
+  hazardDescription?: string;
   scannedCells: Point2D[];
 }
 
 export class CollisionSystem {
+  /**
+   * Evaluates whether a cell constitutes a dangerous hazard:
+   * Boulders, glitchy/rough terrain, steep slopes, super inclined crater walls/rims
+   */
+  public static classifyHazard(cell: TerrainCell): { isHazard: boolean; type?: HazardType; desc?: string } {
+    // 1. Boulder or impassable rock outcrop / crater rim
+    if (cell.isObstacle) {
+      if (cell.roughness > 2.0) {
+        return { isHazard: true, type: 'BOULDER', desc: 'Boulder / Rock Hazard' };
+      }
+      if (cell.elevation < 0 || cell.slope >= 18.0) {
+        return { isHazard: true, type: 'CRATER_RIM', desc: 'Crater Rim Depression' };
+      }
+      return { isHazard: true, type: 'BOULDER', desc: 'Boulder / Rock Hazard' };
+    }
+
+    // 2. Super Inclined Crater (depression with steep walls >= 18°)
+    if (cell.elevation < -1.5 && cell.slope >= 18.0) {
+      return {
+        isHazard: true,
+        type: 'SUPER_INCLINED_CRATER',
+        desc: `Super Inclined Crater Wall (${cell.slope.toFixed(1)}°)`,
+      };
+    }
+
+    // 3. Steep Slopes (approaching or exceeding safe rollover limit >= 20°)
+    if (cell.slope >= 20.0) {
+      return {
+        isHazard: true,
+        type: 'STEEP_SLOPE',
+        desc: `Excessive Slope Gradient (${cell.slope.toFixed(1)}°)`,
+      };
+    }
+
+    // 4. Glitchy / Extreme Rough Regolith (hazardous boulder fields >= 1.8)
+    if (cell.roughness >= 1.8) {
+      return {
+        isHazard: true,
+        type: 'GLITCHY_TERRAIN',
+        desc: `Glitchy / Rough Terrain Discontinuity (Roughness ${cell.roughness.toFixed(1)})`,
+      };
+    }
+
+    return { isHazard: false };
+  }
+
   /**
    * Scans forward LiDAR cone from rover position
    */
@@ -26,6 +82,8 @@ export class CollisionSystem {
     let hasHazardAhead = false;
     let closestHazardDistMeters = Infinity;
     let hazardCell: TerrainCell | undefined = undefined;
+    let hazardType: HazardType | undefined = undefined;
+    let hazardDescription: string | undefined = undefined;
 
     const minX = Math.max(0, Math.floor(state.x - rangeCells));
     const maxX = Math.min(grid.width - 1, Math.ceil(state.x + rangeCells));
@@ -49,11 +107,14 @@ export class CollisionSystem {
           scannedCells.push({ x, y });
           const cell = grid.cells[y][x];
 
-          if (cell.isObstacle || cell.cost === Infinity || cell.slope >= 25.0) {
+          const classification = CollisionSystem.classifyHazard(cell);
+          if (classification.isHazard) {
             hasHazardAhead = true;
             if (distMeters < closestHazardDistMeters) {
               closestHazardDistMeters = distMeters;
               hazardCell = cell;
+              hazardType = classification.type;
+              hazardDescription = classification.desc;
             }
           }
         }
@@ -64,6 +125,8 @@ export class CollisionSystem {
       hasHazardAhead,
       closestHazardDistMeters: hasHazardAhead ? Number(closestHazardDistMeters.toFixed(1)) : Infinity,
       hazardCell,
+      hazardType,
+      hazardDescription,
       scannedCells,
     };
   }

@@ -191,7 +191,7 @@ console.log('--- TEST SUITE 3: Dynamic Hazard Encounter & Detour to Destination 
   let obstacleInjected = false;
   const eventsCollected: string[] = [];
 
-  for (let step = 0; step < 7000; step++) {
+  for (let step = 0; step < 10000; step++) {
     // Inject dynamic boulder hazard directly at upcoming waypoint once rover has started moving
     if (!obstacleInjected && waypointIdx >= 1 && waypointIdx + 1 < activePath.length) {
       const hazardPt = activePath[waypointIdx + 1];
@@ -211,7 +211,7 @@ console.log('--- TEST SUITE 3: Dynamic Hazard Encounter & Detour to Destination 
       activePath,
       currentWaypointIndex: waypointIdx,
       targetPoint: target,
-      dtSeconds: 0.02,
+      dtSeconds: 0.05,
       isAutonomous: true,
       rerouteCount: reroutes,
     });

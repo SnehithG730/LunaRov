@@ -14,7 +14,7 @@ import {
   Route,
   Cpu,
   Layers,
-  Sparkles,
+  Activity,
   MapPin,
   Compass,
   Zap,
@@ -27,6 +27,7 @@ import {
   Clock,
   Sun,
   Info,
+  Sparkles,
 } from 'lucide-react';
 
 export const LeftMissionControls: React.FC = () => {
@@ -60,6 +61,7 @@ export const LeftMissionControls: React.FC = () => {
   const regenerateTerrain = useMissionStore((s) => s.regenerateTerrain);
 
   const algorithms: { id: AlgorithmType; label: string; tag: string; desc: string }[] = [
+    { id: 'DSTAR_LITE', label: 'D* LITE', tag: 'DYNAMIC', desc: 'D* Lite dynamically updates the rover\'s route when the environment changes.' },
     { id: 'ASTAR', label: 'A* HEURISTIC', tag: 'OPTIMAL', desc: 'Slope-aware octile heuristic. Guaranteed shortest cost.' },
     { id: 'DIJKSTRA', label: 'DIJKSTRA', tag: 'UNIFORM', desc: 'Explores cost contours uniformly without directional heuristic.' },
     { id: 'GREEDY_BFS', label: 'GREEDY BFS', tag: 'SPEED', desc: 'Prioritizes Euclidean/Octile distance directly to target.' },
@@ -472,7 +474,7 @@ export const LeftMissionControls: React.FC = () => {
             title="Randomize sector seed [G]"
             aria-label="Randomize Terrain"
           >
-            <Sparkles className="w-3 h-3" />
+            <Activity className="w-3 h-3" />
             <span>RANDOMIZE</span>
           </button>
         </div>

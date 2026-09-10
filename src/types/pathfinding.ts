@@ -1,6 +1,6 @@
 import { RoverConfig } from '@/types/rover';
 
-export type AlgorithmType = 'ASTAR' | 'DIJKSTRA' | 'GREEDY_BFS' | 'MANUAL';
+export type AlgorithmType = 'ASTAR' | 'DIJKSTRA' | 'GREEDY_BFS' | 'DSTAR_LITE' | 'MANUAL';
 export type HeuristicType = 'EUCLIDEAN' | 'OCTILE' | 'MANHATTAN';
 
 export type OptimizationStrategy =
@@ -86,6 +86,16 @@ export interface Point2D {
   y: number;
 }
 
+export interface ReplanTelemetry {
+  replansCount: number;
+  nodesUpdated: number;
+  pathLengthBeforeMeters: number;
+  pathLengthAfterMeters: number;
+  additionalDistanceMeters: number;
+  hazardLocation?: Point2D;
+  timestamp?: number;
+}
+
 export interface PathNode {
   x: number;
   y: number;
@@ -155,6 +165,7 @@ export interface PathfindingResult {
   path: Point2D[];
   rawPath?: Point2D[];
   optimizedPath?: Point2D[];
+  originalPlannedPath?: Point2D[];
   exploredNodes: Point2D[];
   totalDistanceMeters: number;
   totalDistance: number;              // Standard alias
@@ -180,6 +191,7 @@ export interface PathfindingResult {
   feasibilityWarning?: string;
   costBreakdown?: CostBreakdown;
   visualizationData?: PathVisualizationData;
+  replanTelemetry?: ReplanTelemetry;
 }
 
 export interface AlgorithmComparisonItem {

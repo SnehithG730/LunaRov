@@ -48,6 +48,19 @@ export interface RoverState {
   timeInIlluminationSeconds?: number;  // Seconds spent under illumination > 0.3
   timeInShadowSeconds?: number;        // Seconds spent under deep shadow <= 0.3
   minimumBatteryRecordedPct?: number;  // Lowest battery percentage reached during run
+  avoidedHazard?: Point2D;    // Hazard cell currently being detoured around
+}
+
+export interface DiscoveryTelemetry {
+  lidarRangeMeters: number;
+  cellsScannedTotal: number;
+  cellsDiscoveredCount: number;
+  totalCellsInGrid: number;
+  explorationPercentage: number;
+  hazardsDetectedCount: number;
+  unknownCellsRemaining: number;
+  replansCount: number;
+  lastDiscoveryMessage?: string;
 }
 
 export interface TelemetryPoint {
@@ -64,5 +77,7 @@ export interface TelemetryPoint {
   solarPowerWatts?: number;
   netPowerWatts?: number;
   illumination?: number;
+  discoveredCellsCount?: number;
+  explorationPct?: number;
 }
 

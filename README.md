@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to access **LunaRov**.
+Open [https://luna-rov.vercel.app/](https://luna-rov.vercel.app/) to access **LunaRov**.
 
 ### Verification & Testing
 ```bash

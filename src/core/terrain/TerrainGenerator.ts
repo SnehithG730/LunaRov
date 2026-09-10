@@ -37,6 +37,28 @@ export class TerrainGenerator {
     const boulders: BoulderSpec[] = options.boulders ? [...options.boulders] : [];
     let roughnessBias = options.roughnessBias ?? 1.0;
 
+    // Helper to generate realistic non-circular, organic craters with randomized harmonics
+    const makeOrganicCrater = (
+      cx: number,
+      cy: number,
+      rad: number,
+      depth: number,
+      rimH: number
+    ): CraterSpec => ({
+      x: cx,
+      y: cy,
+      radius: rad,
+      depth,
+      rimHeight: rimH,
+      eccentricity: 0.05 + rng() * 0.22,
+      angle: rng() * Math.PI * 2,
+      harmonics: [
+        { freq: 2, amp: 0.06 + rng() * 0.10, phase: rng() * Math.PI * 2 },
+        { freq: 3, amp: 0.03 + rng() * 0.07, phase: rng() * Math.PI * 2 },
+        { freq: 4 + Math.floor(rng() * 2), amp: 0.02 + rng() * 0.04, phase: rng() * Math.PI * 2 },
+      ],
+    });
+
     // Apply preset characteristics
     switch (type) {
       case 'FLAT':
@@ -44,11 +66,11 @@ export class TerrainGenerator {
         octaves = 2;
         frequency = 0.03;
         roughnessBias = 1.0;
-        // Few subtle craters
+        // Few subtle craters with organic contours
         if (!options.craters) {
           craters.push(
-            { x: Math.floor(width * 0.3), y: Math.floor(height * 0.4), radius: 5, depth: 3, rimHeight: 1 },
-            { x: Math.floor(width * 0.75), y: Math.floor(height * 0.7), radius: 4, depth: 2.5, rimHeight: 0.8 }
+            makeOrganicCrater(Math.floor(width * 0.3), Math.floor(height * 0.4), 5, 3, 1),
+            makeOrganicCrater(Math.floor(width * 0.75), Math.floor(height * 0.7), 4, 2.5, 0.8)
           );
         }
         break;
@@ -62,13 +84,15 @@ export class TerrainGenerator {
           const count = 6 + Math.floor(rng() * 4);
           for (let i = 0; i < count; i++) {
             const rad = 3 + rng() * 6;
-            craters.push({
-              x: 6 + rng() * (width - 12),
-              y: 6 + rng() * (height - 12),
-              radius: rad,
-              depth: 4 + rad * 1.2,
-              rimHeight: 1.0 + rad * 0.3,
-            });
+            craters.push(
+              makeOrganicCrater(
+                6 + rng() * (width - 12),
+                6 + rng() * (height - 12),
+                rad,
+                4 + rad * 1.2,
+                1.0 + rad * 0.3
+              )
+            );
           }
         }
         break;
@@ -91,7 +115,7 @@ export class TerrainGenerator {
         }
         if (!options.craters) {
           craters.push(
-            { x: Math.floor(width * 0.5), y: Math.floor(height * 0.3), radius: 5, depth: 5, rimHeight: 1.5 }
+            makeOrganicCrater(Math.floor(width * 0.5), Math.floor(height * 0.3), 5, 5, 1.5)
           );
         }
         break;
@@ -103,7 +127,7 @@ export class TerrainGenerator {
         roughnessBias = 1.1;
         if (!options.craters) {
           craters.push(
-            { x: Math.floor(width * 0.25), y: Math.floor(height * 0.75), radius: 7, depth: 10, rimHeight: 2.5 }
+            makeOrganicCrater(Math.floor(width * 0.25), Math.floor(height * 0.75), 7, 10, 2.5)
           );
         }
         break;
@@ -117,8 +141,8 @@ export class TerrainGenerator {
         if (!options.craters) {
           // Dominant south pole crater rim feature
           craters.push(
-            { x: Math.floor(width * 0.45), y: Math.floor(height * 0.5), radius: 13, depth: 16, rimHeight: 4.0 },
-            { x: Math.floor(width * 0.8), y: Math.floor(height * 0.2), radius: 6, depth: 7, rimHeight: 2.0 }
+            makeOrganicCrater(Math.floor(width * 0.45), Math.floor(height * 0.5), 13, 16, 4.0),
+            makeOrganicCrater(Math.floor(width * 0.8), Math.floor(height * 0.2), 6, 7, 2.0)
           );
           // Boulder debris along ejecta blanket
           for (let i = 0; i < 16; i++) {
@@ -162,37 +186,43 @@ export class TerrainGenerator {
         // Base fractal noise
         let elev = noise.fractalNoise(x * frequency, y * frequency, octaves, 0.5, 2.0) * baseAmplitude;
 
-        // Apply craters if enabled
+        // Apply craters if enabled (with realistic irregular harmonic shapes)
         if (toggles.enableCraters) {
           for (const crater of craters) {
             const dx = x - crater.x;
             const dy = y - crater.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const r = crater.radius;
+            const dist = Math.hypot(dx, dy);
 
-            if (dist < r) {
-              // Interior parabolic bowl
-              const t = dist / r;
+            // Compute angular distortion for randomized, non-circular crater perimeter
+            const angle = Math.atan2(dy, dx) - (crater.angle ?? 0);
+            let radiusMod = 1.0;
+
+            if (crater.eccentricity) {
+              radiusMod += crater.eccentricity * Math.cos(2 * angle);
+            }
+            if (crater.harmonics) {
+              for (const h of crater.harmonics) {
+                radiusMod += h.amp * Math.cos(h.freq * angle + h.phase);
+              }
+            }
+
+            // Organic edge variation
+            const edgeNoise = noise.noise((x + crater.x) * 0.3, (y + crater.y) * 0.3) * 0.06;
+            radiusMod += edgeNoise;
+
+            const effectiveRadius = Math.max(1.0, crater.radius * radiusMod);
+            const rimRadius = effectiveRadius * 1.65;
+
+            if (dist < effectiveRadius) {
+              // Interior parabolic bowl with natural floor curvature
+              const t = dist / effectiveRadius;
               const bowl = -crater.depth * (1.0 - t * t);
               elev += bowl;
-            } else if (dist < r * 1.6) {
-              // Raised rim and outer ejecta slope
-              const t = (dist - r) / (r * 0.6);
-              const rim = crater.rimHeight * (1.0 - t) * (1.0 - t);
+            } else if (dist < rimRadius) {
+              // Raised crater rim and outer ejecta slope
+              const t = (dist - effectiveRadius) / (rimRadius - effectiveRadius);
+              const rim = crater.rimHeight * Math.pow(1.0 - t, 2.2);
               elev += rim;
-            }
-          }
-        }
-
-        // Apply boulders if enabled
-        if (toggles.enableRocks) {
-          for (const boulder of boulders) {
-            const dx = x - boulder.x;
-            const dy = y - boulder.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < boulder.radius) {
-              const t = dist / boulder.radius;
-              elev += boulder.height * (1.0 - t * t);
             }
           }
         }

@@ -10,6 +10,16 @@ export interface TerrainCell {
   cost: number;            // Traversal cost multiplier: 1.0 (baseline) to Infinity (impassable)
   discovered: boolean;     // Sensor visibility / Fog of war state
   illumination: number;    // Solar illumination factor: 0.0 (deep shadow / PSR) to 1.0 (full sunlight)
+  discoveredAtSec?: number; // Simulation time when cell was revealed by LiDAR
+  hazardType?: string;     // Identified hazard classification ('BOULDER' | 'STEEP_SLOPE' | 'CRATER_WALL' | 'ROUGH_TERRAIN')
+}
+
+export interface UnknownTerrainConfig {
+  enabled: boolean;
+  initialExploredRadiusCells: number; // e.g. 4 cells around start
+  scanIntervalSec: number;            // e.g. 0.1s
+  unknownCellCost: number;            // e.g. 1.0 baseline regolith prior
+  unknownCellElevation: number;       // e.g. 0m prior
 }
 
 export interface TerrainGrid {
@@ -25,12 +35,22 @@ export interface TerrainGrid {
   sunElevationDeg?: number;// Solar elevation angle in degrees (e.g. 2.5° for lunar south pole)
 }
 
+export interface CraterHarmonic {
+  freq: number;
+  amp: number;
+  phase: number;
+}
+
 export interface CraterSpec {
   x: number;
   y: number;
   radius: number;          // Radius in grid cells
   depth: number;           // Depth in meters
   rimHeight: number;       // Rim height in meters
+  eccentricity?: number;   // Elliptical elongation (0.0 = circle, 0.4 = elongated)
+  angle?: number;          // Orientation angle in radians
+  harmonics?: CraterHarmonic[]; // Harmonic perturbations for organic irregular rims
+  roughness?: number;      // Micro-roughness on ejecta blanket
 }
 
 export interface BoulderSpec {

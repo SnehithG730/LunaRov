@@ -202,7 +202,7 @@ export class RoverKinematics {
     const validY = isNaN(y) || !isFinite(y) ? 0 : y;
     const validH = isNaN(heading) || !isFinite(heading) ? 0 : heading;
 
-    const r = 0.75; // Sampling radius in grid cells (1.5m baseline for rover chassis)
+    const r = 0.3; // Sampling radius in grid cells (0.6m baseline for rover wheel contact)
     const fx = validX + Math.cos(validH) * r;
     const fy = validY + Math.sin(validH) * r;
     const bx = validX - Math.cos(validH) * r;

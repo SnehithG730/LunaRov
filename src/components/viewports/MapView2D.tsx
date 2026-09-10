@@ -28,9 +28,13 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
   const objectiveWeights = useMissionStore((s) => s.objectiveWeights);
   const costHeatmapActive = useMissionStore((s) => s.costHeatmapActive);
   const illuminationOverlayActive = useMissionStore((s) => s.illuminationOverlayActive);
+  const simulationStatus = useMissionStore((s) => s.simulationStatus);
   const setStartPoint = useMissionStore((s) => s.setStartPoint);
   const setTargetPoint = useMissionStore((s) => s.setTargetPoint);
   const applyBrushAt = useMissionStore((s) => s.applyBrushAt);
+
+  const sensorDiscoveryMode = useMissionStore((s) => s.sensorDiscoveryMode);
+  const originalPlannedPath = useMissionStore((s) => s.originalPlannedPath);
 
   const [hoverInfo, setHoverInfo] = useState<{
     x: number;
@@ -40,6 +44,8 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     cost: number;
     illumination: number;
     isObstacle: boolean;
+    discovered?: boolean;
+    hazardType?: string;
   } | null>(null);
 
   const isMouseDownRef = useRef(false);
@@ -58,13 +64,25 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
 
     ctx.clearRect(0, 0, width, height);
 
-    // 1. Draw Terrain Elevation Cells, Illumination Map, or Cost Heatmap
+    // 1. Draw Terrain Elevation Cells (with Fog-of-War, Illumination, and Cost Heatmap support)
     const { minElevation, maxElevation } = terrain;
     const elevRange = Math.max(1, maxElevation - minElevation);
 
     for (let y = 0; y < terrain.height; y++) {
       for (let x = 0; x < terrain.width; x++) {
         const cell = terrain.cells[y][x];
+
+        // Fog of War: Unknown cell rendering in Discovery Mode
+        if (sensorDiscoveryMode && !cell.discovered) {
+          ctx.fillStyle = '#050a14';
+          ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+
+          // Subtle unmapped grid hash
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+          ctx.fillRect(x * cellW + 1, y * cellH + 1, cellW - 2, cellH - 2);
+          continue;
+        }
+
         const illum = cell.illumination ?? 0.8;
 
         if (illuminationOverlayActive) {
@@ -166,6 +184,12 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
             }
           }
         }
+
+        // Recent discovery highlight glow
+        if (cell.discoveredAtSec !== undefined && Math.abs(roverState.elapsedTimeSeconds - cell.discoveredAtSec) < 1.5) {
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+          ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+        }
       }
     }
 
@@ -211,11 +235,31 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       ctx.setLineDash([]); // Reset dash
     }
 
-    // 5. Draw Planned Path (Curved Trajectory with Strategy Color Glow)
+    // 4b. Draw Original Planned Route (Ghost Trail if replanned)
+    if (
+      originalPlannedPath &&
+      originalPlannedPath.length > 1 &&
+      activePath &&
+      (originalPlannedPath.length !== activePath.length || originalPlannedPath !== activePath)
+    ) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo((originalPlannedPath[0].x + 0.5) * cellW, (originalPlannedPath[0].y + 0.5) * cellH);
+      for (let i = 1; i < originalPlannedPath.length; i++) {
+        ctx.lineTo((originalPlannedPath[i].x + 0.5) * cellW, (originalPlannedPath[i].y + 0.5) * cellH);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 5. Draw Planned Path (Curved-and-Straight Aerospace Trajectory with Strategy Color Glow)
     if (activePath.length > 1) {
       const stratColor = STRATEGY_METADATA[optimizationStrategy]?.color || '#00f0ff';
 
-      // Glow underlay
+      // 5a. Glow underlay
       ctx.strokeStyle = `${stratColor}66`;
       ctx.lineWidth = 5.0;
       ctx.lineCap = 'round';
@@ -245,9 +289,31 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       ctx.stroke();
       ctx.shadowBlur = 0; // reset
 
-      // Waypoint small dots along remaining trajectory
+      // 5b. Animated Flowing Directional Pulse Dash
+      const dashOffset = (Date.now() * 0.02) % 16;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 12]);
+      ctx.lineDashOffset = -dashOffset;
+
+      ctx.beginPath();
+      ctx.moveTo(firstPx, firstPy);
+      for (let i = 1; i < activePath.length - 1; i++) {
+        const pCurr = activePath[i];
+        const pNext = activePath[i + 1];
+        const midX = ((pCurr.x + pNext.x) * 0.5 + 0.5) * cellW;
+        const midY = ((pCurr.y + pNext.y) * 0.5 + 0.5) * cellH;
+        ctx.quadraticCurveTo((pCurr.x + 0.5) * cellW, (pCurr.y + 0.5) * cellH, midX, midY);
+      }
+      ctx.lineTo((lastPt.x + 0.5) * cellW, (lastPt.y + 0.5) * cellH);
+      ctx.stroke();
+      ctx.restore();
+
+      // 5c. Safe Waypoint Guidance Markers
       ctx.fillStyle = stratColor;
-      for (let i = currentWaypointIndex; i < activePath.length; i += 2) {
+      const step = Math.max(1, Math.floor(activePath.length / 25));
+      for (let i = currentWaypointIndex; i < activePath.length; i += step) {
         const pt = activePath[i];
         ctx.beginPath();
         ctx.arc((pt.x + 0.5) * cellW, (pt.y + 0.5) * cellH, 2.2, 0, 2 * Math.PI);
@@ -255,13 +321,23 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
       }
     }
 
-    // 6. LiDAR Sensor Vision Cone
+    // 6. LiDAR Sensor Range Ring & Vision Cone
     const roverPx = (roverState.x + 0.5) * cellW;
     const roverPy = (roverState.y + 0.5) * cellH;
     const sensorRangePx = (roverConfig.sensorRangeMeters / terrain.resolution) * cellW;
     const halfFovRad = ((roverConfig.sensorFovDeg * 0.5) * Math.PI) / 180;
 
     ctx.save();
+    // 360° LiDAR Detection Perimeter Circle
+    ctx.beginPath();
+    ctx.arc(roverPx, roverPy, sensorRangePx, 0, Math.PI * 2);
+    ctx.strokeStyle = sensorDiscoveryMode ? 'rgba(6, 182, 212, 0.35)' : 'rgba(0, 240, 255, 0.18)';
+    ctx.lineWidth = 1.0;
+    ctx.setLineDash([2, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Forward Directional LiDAR Arc
     ctx.beginPath();
     ctx.moveTo(roverPx, roverPy);
     ctx.arc(
@@ -278,6 +354,71 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.restore();
+
+    // 6b. Active Hazard Detection & Tracking Reticle
+    if (sensorScan?.hasHazardAhead && sensorScan.hazardCell) {
+      const hzCell = sensorScan.hazardCell;
+      const hzPx = (hzCell.x + 0.5) * cellW;
+      const hzPy = (hzCell.y + 0.5) * cellH;
+
+      const isCrater = sensorScan.hazardType === 'SUPER_INCLINED_CRATER' || sensorScan.hazardType === 'CRATER_RIM';
+      const isSlope = sensorScan.hazardType === 'STEEP_SLOPE';
+      const isGlitch = sensorScan.hazardType === 'GLITCHY_TERRAIN';
+      const color = isCrater ? '#f43f5e' : isSlope ? '#f59e0b' : isGlitch ? '#a855f7' : '#ef4444';
+
+      ctx.save();
+      // Laser tracking dashed line from rover to hazard
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(roverPx, roverPy);
+      ctx.lineTo(hzPx, hzPy);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Hazard reticle circle & crosshairs
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hzPx, hzPy, cellW * 0.75, 0, 2 * Math.PI);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(hzPx - cellW * 0.9, hzPy);
+      ctx.lineTo(hzPx + cellW * 0.9, hzPy);
+      ctx.moveTo(hzPx, hzPy - cellH * 0.9);
+      ctx.lineTo(hzPx, hzPy + cellH * 0.9);
+      ctx.stroke();
+
+      // Hazard classification pill badge
+      const label = `⚠️ ${sensorScan.hazardType?.replace(/_/g, ' ') || 'HAZARD'} (${sensorScan.closestHazardDistMeters}m)`;
+      ctx.font = 'bold 9.5px monospace';
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(8, 13, 26, 0.92)';
+      ctx.fillRect(hzPx - textWidth / 2 - 5, hzPy - cellH * 1.3 - 11, textWidth + 10, 15);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(hzPx - textWidth / 2 - 5, hzPy - cellH * 1.3 - 11, textWidth + 10, 15);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, hzPx, hzPy - cellH * 1.3);
+      ctx.restore();
+    }
+
+    // 6c. AI Autonomous Rerouting Status Banner
+    if (simulationStatus === 'REROUTING') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.95)';
+      ctx.font = 'bold 10.5px monospace';
+      const bannerText = '⚡ AI PATH REALIGNMENT ENGAGED: CALCULATING DETOUR...';
+      const bWidth = ctx.measureText(bannerText).width;
+      ctx.fillRect(width / 2 - bWidth / 2 - 8, 8, bWidth + 16, 20);
+      ctx.fillStyle = '#040711';
+      ctx.textAlign = 'center';
+      ctx.fillText(bannerText, width / 2, 22);
+      ctx.restore();
+    }
 
     // 7. Draw Start Coordinate Beacon (Green)
     const startPx = (startPoint.x + 0.5) * cellW;
@@ -344,6 +485,9 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
     objectiveWeights,
     costHeatmapActive,
     illuminationOverlayActive,
+    simulationStatus,
+    originalPlannedPath,
+    sensorDiscoveryMode,
   ]);
 
   useEffect(() => {
@@ -391,6 +535,8 @@ export const MapView2D: React.FC<MapView2DProps> = ({ clickMode = 'NONE' }) => {
         cost: cell.cost,
         illumination: cell.illumination ?? 0.8,
         isObstacle: cell.isObstacle,
+        discovered: cell.discovered,
+        hazardType: cell.hazardType,
       });
 
       if (isMouseDownRef.current && (clickMode === 'BRUSH' || editorBrush !== 'NONE')) {

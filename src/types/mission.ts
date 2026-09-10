@@ -46,6 +46,17 @@ export interface MissionResults {
   outcome: 'SUCCESS' | 'BATTERY_DEPLETED' | 'OBSTACLE_COLLISION' | 'ABORTED';
   efficiencyScore: number; // 0 to 100
   telemetryLog: TelemetryPoint[];
+
+  // Sensor Discovery / Unknown Terrain Exploration Metrics
+  sensorDiscoveryMode?: boolean;
+  totalExploredAreaM2?: number;
+  explorationPercentage?: number;
+  hazardsDetectedCount?: number;
+  unexpectedObstaclesCount?: number;
+  additionalDetourDistanceMeters?: number;
+  energyUsedDuringExplorationWh?: number;
+  discoveredCellsCount?: number;
+  totalCellsCount?: number;
 }
 
 export interface SavedMission {
@@ -65,4 +76,5 @@ export interface SavedMission {
   calculatedPath?: Point2D[];
   status?: string;
   results?: MissionResults;
+  sensorDiscoveryMode?: boolean;
 }
